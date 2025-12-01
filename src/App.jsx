@@ -222,27 +222,40 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
 };
 
 
-// Simple Number/Text Input Group
-const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "" }) => (
-  <div className="mb-3">
-    <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-    <div className="relative rounded-md shadow-sm">
-      {prefix && (
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <span className="text-gray-500 sm:text-sm">{prefix}</span>
-        </div>
-      )}
-      <input
-        type={type}
-        step={step}
-        className={`focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 ${prefix ? 'pl-8' : 'pl-3'}`}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
+// Simple Number/Text Input Group (MODIFIED to include required mark and validation border)
+const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "", required = false }) => {
+  const isInvalid = required && (value === '' || parseFloat(value) === 0 || isNaN(parseFloat(value)));
+  
+  return (
+    <div className="mb-3">
+      <label className="block text-xs font-medium text-gray-500 mb-1">
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
+      </label>
+      <div className="relative rounded-md shadow-sm">
+        {prefix && (
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <span className="text-gray-500 sm:text-sm">{prefix}</span>
+          </div>
+        )}
+        <input
+          type={type}
+          step={step}
+          className={`
+            focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm rounded-md py-2 ${prefix ? 'pl-8' : 'pl-3'}
+            ${isInvalid ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-300'}
+          `}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {isInvalid && (
+           <AlertTriangle className="w-4 h-4 text-red-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" title="必填欄位" />
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 
 // --- Main App Component ---
@@ -280,7 +293,7 @@ export default function App() {
   const [editingManufacturer, setEditingManufacturer] = useState(null);
   const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
   
-  // --- NEW: Status Message State ---
+  // --- Status Message State ---
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
 
@@ -290,6 +303,9 @@ export default function App() {
     const savedFees = localStorage.getItem('hkCarDealer_fees');
     const savedHistory = localStorage.getItem('hkCarDealer_history');
     const savedInventory = localStorage.getItem('hkCarDealer_inventory');
+    
+    // --- Console Debugging: Log initial load status ---
+    console.log("Loading data from localStorage...");
 
     if (savedRates) setRates(JSON.parse(savedRates));
     if (savedHistory) setHistory(JSON.parse(savedHistory));
@@ -306,6 +322,7 @@ export default function App() {
                 }
             });
             setDefaultFees(loadedFees);
+            console.log("Fees loaded/cleaned successfully.");
         } catch (error) {
             console.error("Error parsing saved fees, resetting to default.", error);
             setDefaultFees(DEFAULT_FEES);
@@ -356,7 +373,11 @@ export default function App() {
   // --- Calculations ---
   
   const currentCurrency = COUNTRIES[selectedCountry];
-  const currentRate = parseFloat(rates[selectedCountry]) || 0;
+  // 強化匯率解析
+  const currentRate = parseFloat(rates[selectedCountry]) || 0; 
+  if (currentRate === 0) {
+      console.warn(`Exchange rate for ${selectedCountry} is 0 or invalid.`);
+  }
 
   // 1. Car Cost in HKD
   const carPriceVal = parseFloat(carPrice) || 0;
@@ -370,7 +391,8 @@ export default function App() {
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
   // 3. Calculated First Registration Tax (FRT)
-  const calculatedFRT = calculateFRT(approvedRetailPrice);
+  const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
+  const calculatedFRT = calculateFRT(approvedRetailPriceVal);
 
   // 4. HK Fees in HKD (excluding FRT)
   let totalHKFeesWithoutFRT = 0;
@@ -390,7 +412,7 @@ export default function App() {
     return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
   };
   
-  // --- Handlers (Inventory and Fees remain largely the same, but history changes) ---
+  // --- Handlers ---
 
   const handleCarDetailChange = (field, value) => {
     setCarDetails(prev => {
@@ -410,8 +432,6 @@ export default function App() {
       return newDetails;
     });
   };
-
-  // ... (Inventory logic remains the same)
 
   // Manufacturer (Mfr) Options
   const manufacturerOptions = useMemo(() => Object.keys(carInventory), [carInventory]);
@@ -438,8 +458,6 @@ export default function App() {
     return modelData ? modelData.codes : [];
   }, [carInventory, carDetails.manufacturer, carDetails.model]);
   
-  // ... (Settings Inventory Management Handlers remain the same)
-
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
@@ -514,8 +532,6 @@ export default function App() {
     }
   };
 
-  // ... (Other Handlers: Fees/Rates remain the same)
-
   const handleOriginFeeChange = (key, value) => {
     setCurrentOriginFees(prev => ({
       ...prev,
@@ -547,16 +563,27 @@ export default function App() {
     }));
   };
 
-  // --- History Save (Fixed the button feedback issue here) ---
+  // --- History Save (CRITICAL FIXES/DEBUGGING ADDED) ---
   const saveToHistory = () => {
     
-    // Safety check - rely on button's disabled state, but provide feedback if hit.
+    // --- 1. Pre-check: Ensure critical fields are non-zero ---
+    if (carPriceVal <= 0 || approvedRetailPriceVal <= 0) {
+        setSaveStatus({ message: '請輸入有效的車價及PRP以進行記錄!', type: 'error' });
+        setTimeout(() => setSaveStatus(null), 3000);
+        console.error("Save failed: Car Price or Approved Retail Price is 0 or less.", { carPriceVal, approvedRetailPriceVal });
+        return;
+    }
+    
     if (grandTotal <= 0) {
-      setSaveStatus({ message: '請輸入車價或其他成本以計算總額!', type: 'error' });
+      setSaveStatus({ message: '總成本計算結果為零或無效!', type: 'error' });
       setTimeout(() => setSaveStatus(null), 3000);
+      console.error("Save failed: Grand Total is 0 or less.", { grandTotal, carPriceHKD, calculatedFRT });
       return;
     }
 
+    // --- Debugging Step 1: Log before creating record ---
+    console.log("Attempting to save record. Final Grand Total (must be > 0):", grandTotal);
+    
     // 將所有計算時使用的數值和結構全部存入記錄中，確保不受未來設定更改影響
     const newRecord = {
       id: Date.now(),
@@ -567,7 +594,7 @@ export default function App() {
       inputValues: {
           rate: currentRate,
           carPriceNative: carPriceVal,
-          approvedRetailPrice: parseFloat(approvedRetailPrice) || 0,
+          approvedRetailPrice: approvedRetailPriceVal,
       },
       
       // 2. 儲存選定的車輛資料 (String Values)
@@ -589,10 +616,23 @@ export default function App() {
       }
     };
 
+    // --- Debugging Step 2: Log new record ---
+    console.log("New Record created:", newRecord);
+
     const updatedHistory = [newRecord, ...history];
     setHistory(updatedHistory);
-    localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
     
+    // --- Debugging Step 3: Log history update attempt (Catching localStorage failure) ---
+    try {
+        localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
+        console.log("History successfully stored in localStorage. New length:", updatedHistory.length);
+    } catch (e) {
+        console.error("Failed to save history to localStorage. Check browser settings for storage limits/permissions.", e);
+        setSaveStatus({ message: '儲存失敗：本地儲存發生錯誤!', type: 'error' });
+        setTimeout(() => setSaveStatus(null), 5000);
+        return; // Exit if storage fails
+    }
+
     // Success feedback
     setSaveStatus({ message: '記錄成功儲存並已更新歷史記錄!', type: 'success' });
     
@@ -712,7 +752,7 @@ export default function App() {
               </div>
             </Card>
 
-            {/* Main Input: Car Price */}
+            {/* Main Input: Car Price (REQUIRED FIELDS) */}
             <Card className="p-5 border-l-4 border-l-blue-600">
               <SectionHeader icon={DollarSign} title="車輛成本及稅基 (香港/來源地)" color="text-blue-600" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -722,6 +762,7 @@ export default function App() {
                   value={carPrice}
                   onChange={setCarPrice}
                   placeholder="例如: 1500000"
+                  required={true} // Marked as required
                 />
                 {/* 新增 PRP 輸入 */}
                 <InputGroup 
@@ -730,6 +771,7 @@ export default function App() {
                   value={approvedRetailPrice}
                   onChange={setApprovedRetailPrice}
                   placeholder="例如: 350000"
+                  required={true} // Marked as required
                 />
               </div>
               <div className="bg-gray-100 p-3 rounded-lg text-right mt-4">
@@ -778,7 +820,7 @@ export default function App() {
                   <div className="flex justify-between items-center pt-2 mt-2 border-t border-dashed">
                       <span className="text-sm font-bold text-red-600">
                           首次登記稅 (FRT)
-                          <p className='text-xs font-normal text-gray-500'>基於PRP {fmtMoney(approvedRetailPrice)}</p>
+                          <p className='text-xs font-normal text-gray-500'>基於PRP {fmtMoney(approvedRetailPriceVal)}</p>
                       </span>
                       <span className="font-bold text-red-600">{fmtMoney(calculatedFRT)}</span>
                   </div>
@@ -813,7 +855,8 @@ export default function App() {
                 
                 <button 
                   onClick={saveToHistory}
-                  disabled={grandTotal <= 0}
+                  // 只有當 Grand Total > 0 且兩個必填欄位都有效時才啟用按鈕
+                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0} 
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
