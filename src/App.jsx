@@ -11,7 +11,8 @@ import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, de
 // --- Global Constants & FRT Calculation ---
 
 // 1. 🚨 檢查全局變數是否存在，並從 Canvas 注入的配置中獲取 Firebase 設置 🚨
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+// 確保 JSON.parse 處理空字串或未定義值
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : null;
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
 
@@ -235,7 +236,8 @@ export default function App() {
   const [modalConfig, setModalConfig] = useState(null); // { title: string, message: string, onConfirm: function, type: 'warning' | 'danger' }
   
   // --- Firebase connection status ---
-  const isFirebaseConnected = useMemo(() => !!db && !!auth, [db, auth]);
+  const isFirebaseConfigured = useMemo(() => !!firebaseConfig && !!firebaseConfig.projectId, []);
+  const isFirebaseConnected = useMemo(() => isAuthReady && !!db && !!auth && userId && !userId.startsWith('session') && !userId.startsWith('init-error'), [isAuthReady, db, auth, userId]);
 
 
   // --- Firestore Path Helper ---
@@ -248,17 +250,25 @@ export default function App() {
 
   // --- Firebase Initialization and Authentication (Refactored for strict sequencing) ---
   useEffect(() => {
+    if (!isFirebaseConfigured) {
+        setIsAuthReady(true);
+        setUserId('session-' + crypto.randomUUID()); 
+        console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
+        showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
+        return;
+    }
     
     // Helper function to handle async initialization
     const initFirebase = async () => {
-      // 1. Initialize core services
-      const app = initializeApp(firebaseConfig);
-      const firestore = getFirestore(app);
-      const authInstance = getAuth(app);
-      
       let unsubscribeAuth = () => {};
+      setLogLevel('Debug'); // Enable debug logging for Firebase
 
       try {
+        // 1. Initialize core services
+        const app = initializeApp(firebaseConfig);
+        const firestore = getFirestore(app);
+        const authInstance = getAuth(app);
+        
         // 🚨 CRITICAL FIX: Set persistence FIRST and wait for it to ensure it takes effect 
         // before any sign-in attempt (including listener startup) tries to access storage.
         await setPersistence(authInstance, inMemoryPersistence);
@@ -279,10 +289,9 @@ export default function App() {
             if (user) {
                 setUserId(user.uid);
             } else {
-                // If user somehow signs out, we may retry anonymous sign-in or treat as guest
-                setUserId('guest-' + crypto.randomUUID()); 
+                setUserId('guest-' + crypto.randomUUID()); // Should not happen often if sign-in succeeds
             }
-            setIsAuthReady(true);
+            setIsAuthReady(true); // Mark ready once the initial check is done
         });
 
         // 4. Set state for use in other effects
@@ -292,36 +301,28 @@ export default function App() {
       } catch (error) {
         console.error("Firebase initialization or sign-in failed:", error);
         showStatus('Firebase 初始化失敗或登入錯誤，請檢查配置。', 'error');
-        setIsAuthReady(true); // Mark ready to avoid infinite loading, but with guest ID
+        // Fallback to error state
+        setIsAuthReady(true); 
         setUserId('init-error-' + crypto.randomUUID()); 
       }
       
       return unsubscribeAuth; // Return the cleanup function
     };
 
-    // Check if Canvas variables are provided
-    if (firebaseConfig && firebaseConfig.projectId) {
-      // Run the async initialization and capture the cleanup function
-      const cleanupPromise = initFirebase();
-      return () => {
-        cleanupPromise.then(unsubscribe => {
-          if (typeof unsubscribe === 'function') unsubscribe();
-        });
-      };
-    } else {
-      // Local/Session Mode (Fallback if no Canvas variables)
-      setIsAuthReady(true);
-      setUserId('session-' + crypto.randomUUID()); 
-      console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
-      showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
-    }
+    // Run the async initialization and capture the cleanup function
+    const cleanupPromise = initFirebase();
+    return () => {
+      cleanupPromise.then(unsubscribe => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      });
+    };
     
-  }, [initialAuthToken]); // Run only once on mount
+  }, [initialAuthToken, isFirebaseConfigured]); // Rerun if config status changes (though static) or token changes
 
   // --- Firestore History Listener (onSnapshot) ---
   useEffect(() => {
     // 3. 🚨 確保所有 Firestore 操作都在身份驗證就緒後執行 🚨
-    if (!isAuthReady || !db || !userId || userId.startsWith('session') || userId.startsWith('init-error')) return; 
+    if (!isFirebaseConnected) return; 
 
     const historyRef = getHistoryCollectionRef(db, userId);
     
@@ -345,7 +346,7 @@ export default function App() {
       
       setHistory(fetchedHistory);
       setIsHistoryLoading(false);
-      console.log(`History loaded: ${fetchedHistory.length} records.`);
+      console.log(`History loaded: ${fetchedHistory.length} records for user: ${userId}`);
     }, (error) => {
       console.error("Error fetching history:", error);
       setIsHistoryLoading(false);
@@ -353,7 +354,7 @@ export default function App() {
     });
 
     return () => unsubscribe(); // Cleanup listener on unmount/dependency change
-  }, [isAuthReady, db, userId, getHistoryCollectionRef]);
+  }, [isFirebaseConnected, db, userId, getHistoryCollectionRef]);
 
 
   // When country changes, reset fees to defaults
@@ -434,7 +435,7 @@ export default function App() {
 
 
   const saveToHistory = async () => {
-    if (!isFirebaseConnected || !userId || userId.startsWith('session') || userId.startsWith('init-error')) {
+    if (!isFirebaseConnected) {
         return showStatus('數據庫尚未連接或用戶未驗證，無法儲存。', 'error');
     }
     
@@ -502,6 +503,10 @@ export default function App() {
   };
 
   const deleteHistoryItem = async (item) => {
+    if (!isFirebaseConnected) {
+        return showStatus('數據庫尚未連接，無法刪除', 'error');
+    }
+
     if (item.isLocked) {
         return showStatus('此記錄已被鎖定，請先解鎖才能刪除。', 'error');
     }
@@ -510,10 +515,6 @@ export default function App() {
         title: '確認刪除記錄',
         message: `確定要刪除日期為 ${item.date} 的估價記錄嗎？刪除後無法復原。`,
         onConfirm: async () => {
-            if (!isFirebaseConnected || !userId) {
-                setModalConfig(null);
-                return showStatus('數據庫尚未連接，無法刪除', 'error');
-            }
             try {
                 const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, item.id);
                 await deleteDoc(historyDocRef);
@@ -530,7 +531,7 @@ export default function App() {
   };
   
   const toggleLockHistoryItem = async (id, currentLockState) => {
-      if (!isFirebaseConnected || !userId) return;
+      if (!isFirebaseConnected) return;
 
       try {
         const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
@@ -752,10 +753,14 @@ export default function App() {
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
             {/* 根據是否連接 Firebase 顯示狀態 */}
-            <span className={`text-xs px-2 py-0.5 rounded-full ${isFirebaseConnected ? 'bg-green-600' : 'bg-red-600'}`} title={isFirebaseConnected ? "數據已儲存在雲端，重新整理不會遺失。" : "數據未持久化，重新整理將會清除。"}>
+            <span 
+              className={`text-xs px-2 py-0.5 rounded-full ${isFirebaseConnected ? 'bg-green-600' : 'bg-red-600'}`} 
+              title={isFirebaseConnected ? "數據已儲存在雲端，重新整理不會遺失。" : "數據未持久化，重新整理將會清除。"}
+            >
               {isFirebaseConnected ? '雲端模式' : '會話模式'}
             </span>
             {userId && <span className="text-xs text-gray-400 ml-2 truncate hidden sm:block">用戶ID: {userId}</span>}
+            {!isAuthReady && <Loader2 className='w-4 h-4 ml-2 animate-spin text-gray-400' />}
           </div>
           <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
             <button 
