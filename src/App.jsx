@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle } from 'lucide-react';
 
 // --- Global Constants & FRT Calculation ---
 
@@ -279,6 +279,9 @@ export default function App() {
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
   const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
+  
+  // --- NEW: Status Message State ---
+  const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
 
   // Load settings & history from local storage on mount
@@ -325,7 +328,9 @@ export default function App() {
     localStorage.setItem('hkCarDealer_fees', JSON.stringify(defaultFees));
     localStorage.setItem('hkCarDealer_inventory', JSON.stringify(carInventory));
     
-    console.log('設定已儲存！');
+    // Add success feedback for settings save
+    setSaveStatus({ message: '設定已成功儲存！', type: 'success' });
+    setTimeout(() => setSaveStatus(null), 3000);
   };
 
   const resetSettings = () => {
@@ -341,6 +346,10 @@ export default function App() {
       setCurrentHKFees(DEFAULT_FEES[selectedCountry].hk);
       setCarPrice('');
       setApprovedRetailPrice('');
+      
+      // Add success feedback for reset
+      setSaveStatus({ message: '所有設定已重置回預設值。', type: 'success' });
+      setTimeout(() => setSaveStatus(null), 3000);
     }
   };
 
@@ -434,7 +443,9 @@ export default function App() {
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
-      console.log('製造商名稱無效或已存在。');
+      // Improved feedback for settings
+      setSaveStatus({ message: '製造商名稱無效或已存在!', type: 'error' });
+      setTimeout(() => setSaveStatus(null), 3000);
       return;
     }
     setCarInventory(prev => ({
@@ -459,7 +470,8 @@ export default function App() {
   const handleAddModel = (mfrName) => {
     const modelId = newModel.id.trim();
     if (!modelId || !carInventory[mfrName]) {
-      console.log('型號名稱無效。');
+      setSaveStatus({ message: '型號名稱無效!', type: 'error' });
+      setTimeout(() => setSaveStatus(null), 3000);
       return;
     }
 
@@ -467,7 +479,8 @@ export default function App() {
     const codesArray = newModel.codes.split(',').map(s => s.trim()).filter(s => s);
 
     if (carInventory[mfrName].models.some(m => m.id === modelId)) {
-        console.log('該型號已存在。');
+        setSaveStatus({ message: '該型號已存在!', type: 'error' });
+        setTimeout(() => setSaveStatus(null), 3000);
         return;
     }
 
@@ -534,10 +547,13 @@ export default function App() {
     }));
   };
 
-  // --- History Save (Crucial change for data isolation) ---
+  // --- History Save (Fixed the button feedback issue here) ---
   const saveToHistory = () => {
-    if (grandTotal === 0 || carPriceVal === 0) {
-      console.log('估算總額為 0 或車價未輸入，無法儲存。');
+    
+    // Safety check - rely on button's disabled state, but provide feedback if hit.
+    if (grandTotal <= 0) {
+      setSaveStatus({ message: '請輸入車價或其他成本以計算總額!', type: 'error' });
+      setTimeout(() => setSaveStatus(null), 3000);
       return;
     }
 
@@ -577,8 +593,14 @@ export default function App() {
     setHistory(updatedHistory);
     localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
     
-    console.log('記錄已儲存。');
-    setActiveTab('history');
+    // Success feedback
+    setSaveStatus({ message: '記錄成功儲存並已更新歷史記錄!', type: 'success' });
+    
+    // Go to history tab after a small delay to let the user see the success message
+    setTimeout(() => {
+        setSaveStatus(null);
+        setActiveTab('history');
+    }, 800);
   };
 
   const deleteHistoryItem = (id) => {
@@ -586,6 +608,9 @@ export default function App() {
       const updatedHistory = history.filter(item => item.id !== id);
       setHistory(updatedHistory);
       localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
+      
+      setSaveStatus({ message: '記錄已刪除!', type: 'success' });
+      setTimeout(() => setSaveStatus(null), 3000);
     }
   };
 
@@ -767,7 +792,7 @@ export default function App() {
               </Card>
             </div>
 
-            {/* Grand Total Bar */}
+            {/* Grand Total Bar and Status Message (MODIFIED) */}
             <div className="sticky bottom-0 bg-gray-900 text-white p-4 rounded-2xl shadow-xl z-20">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex-1">
@@ -795,6 +820,18 @@ export default function App() {
                   <span>記錄預算</span>
                 </button>
               </div>
+
+              {/* Status Message Display */}
+              {saveStatus && (
+                  <div 
+                      className={`absolute bottom-full left-0 right-0 p-3 rounded-t-xl shadow-lg transition-all duration-300 
+                      ${saveStatus.type === 'success' ? 'bg-green-500' : 'bg-red-500'} 
+                      flex items-center gap-2 text-white text-sm font-medium`}
+                  >
+                      {saveStatus.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                      {saveStatus.message}
+                  </div>
+              )}
             </div>
           </div>
         )}
