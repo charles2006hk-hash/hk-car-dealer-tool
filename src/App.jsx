@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X } from 'lucide-react';
 
-// --- Default Data & Configuration ---
+// --- Global Constants & FRT Calculation ---
 
 const DEFAULT_RATES = {
   JP: 0.053, // JPY to HKD
@@ -15,7 +15,7 @@ const COUNTRIES = {
   DE: { id: 'DE', name: '德國 (Germany)', currency: 'EUR', symbol: '€' },
 };
 
-// Default Fees Structure (Unchanged)
+// 更新預設費用結構：移除 HK 費用中的 'tax' 項目，因為它現在是計算出來的 FRT。
 const DEFAULT_FEES = {
   JP: {
     origin: {
@@ -28,7 +28,6 @@ const DEFAULT_FEES = {
       parts: { label: '更換配件/維修', val: 3000 },
       insurance: { label: '保險費', val: 1500 },
       license: { label: '牌費', val: 5800 },
-      tax: { label: '預算首次登記稅 (FRT)', val: 0 },
     }
   },
   UK: {
@@ -42,7 +41,6 @@ const DEFAULT_FEES = {
       parts: { label: '更換配件/維修', val: 4000 },
       insurance: { label: '保險費', val: 2000 },
       license: { label: '牌費', val: 5800 },
-      tax: { label: '預算首次登記稅 (FRT)', val: 0 },
     }
   },
   DE: {
@@ -56,12 +54,10 @@ const DEFAULT_FEES = {
       parts: { label: '更換配件/維修', val: 4000 },
       insurance: { label: '保險費', val: 2000 },
       license: { label: '牌費', val: 5800 },
-      tax: { label: '預算首次登記稅 (FRT)', val: 0 },
     }
   }
 };
 
-// 新增預設庫存資料
 const DEFAULT_INVENTORY = {
   Toyota: {
     models: [
@@ -76,6 +72,47 @@ const DEFAULT_INVENTORY = {
     ]
   },
   BMW: { models: [] },
+};
+
+/**
+ * 根據香港累進稅率計算汽車首次登記稅 (FRT)
+ * @param {number} prp - 汽車的核准公布零售價 (Approved Retail Price, HKD)
+ * @returns {number} 計算出的首次登記稅 (FRT)
+ */
+const calculateFRT = (prp) => {
+    let taxableValue = parseFloat(prp) || 0;
+    let frt = 0;
+
+    // 1. 最初的 $150,000 @ 46%
+    if (taxableValue > 0) {
+        const tierLimit = 150000;
+        const amountInTier = Math.min(taxableValue, tierLimit);
+        frt += amountInTier * 0.46;
+        taxableValue -= amountInTier;
+    }
+
+    // 2. 其次的 $150,000 @ 86% (累積 $150,001 - $300,000)
+    if (taxableValue > 0) {
+        const tierLimit = 150000;
+        const amountInTier = Math.min(taxableValue, tierLimit);
+        frt += amountInTier * 0.86;
+        taxableValue -= amountInTier;
+    }
+
+    // 3. 接著的 $200,000 @ 115% (累積 $300,001 - $500,000)
+    if (taxableValue > 0) {
+        const tierLimit = 200000;
+        const amountInTier = Math.min(taxableValue, tierLimit);
+        frt += amountInTier * 1.15;
+        taxableValue -= amountInTier;
+    }
+
+    // 4. 剩餘部分 @ 132% (累積 $500,001 以上)
+    if (taxableValue > 0) {
+        frt += taxableValue * 1.32;
+    }
+
+    return frt;
 };
 
 // --- Components ---
@@ -93,7 +130,7 @@ const SectionHeader = ({ icon: Icon, title, color = "text-gray-800" }) => (
   </div>
 );
 
-// Autocomplete Input Component
+// Autocomplete Input Component (Unchanged)
 const AutocompleteInput = ({ label, value, onChange, options = [], disabled = false, placeholder = "輸入或選擇" }) => {
   const [searchTerm, setSearchTerm] = useState(value || '');
   const [isOpen, setIsOpen] = useState(false);
@@ -218,15 +255,16 @@ export default function App() {
   // Settings State (Persisted)
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [defaultFees, setDefaultFees] = useState(DEFAULT_FEES);
-  // 新增：車輛庫存
   const [carInventory, setCarInventory] = useState(DEFAULT_INVENTORY); 
 
   // Calculator State (Temporary)
   const [carPrice, setCarPrice] = useState('');
+  // 新增：汽車核准公布零售價 (PRP)
+  const [approvedRetailPrice, setApprovedRetailPrice] = useState(''); 
   const [currentOriginFees, setCurrentOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currentHKFees, setCurrentHKFees] = useState(DEFAULT_FEES['JP'].hk);
   
-  // Car Details State (stores selected string values)
+  // Car Details State
   const [carDetails, setCarDetails] = useState({
     manufacturer: '',
     model: '',
@@ -251,10 +289,26 @@ export default function App() {
     const savedInventory = localStorage.getItem('hkCarDealer_inventory');
 
     if (savedRates) setRates(JSON.parse(savedRates));
-    if (savedFees) setDefaultFees(JSON.parse(savedFees));
     if (savedHistory) setHistory(JSON.parse(savedHistory));
-    // 載入庫存
     if (savedInventory) setCarInventory(JSON.parse(savedInventory));
+
+    // Fees structure cleanup: Remove old 'tax' property if loaded from storage
+    if (savedFees) {
+        try {
+            const loadedFees = JSON.parse(savedFees);
+            Object.keys(loadedFees).forEach(countryId => {
+                if (loadedFees[countryId].hk && loadedFees[countryId].hk.tax) {
+                    delete loadedFees[countryId].hk.tax;
+                    console.log(`Removed deprecated 'tax' from HK fees for ${countryId}.`);
+                }
+            });
+            setDefaultFees(loadedFees);
+        } catch (error) {
+            console.error("Error parsing saved fees, resetting to default.", error);
+            setDefaultFees(DEFAULT_FEES);
+        }
+    }
+    
   }, []);
 
   // When country changes, reset fees to defaults but KEEP car details
@@ -262,13 +316,13 @@ export default function App() {
     setCurrentOriginFees(defaultFees[selectedCountry].origin);
     setCurrentHKFees(defaultFees[selectedCountry].hk);
     setCarPrice('');
+    setApprovedRetailPrice(''); // Reset PRP as it is often tied to the car
   }, [selectedCountry, defaultFees]);
 
   // Save settings handler
   const saveSettings = () => {
     localStorage.setItem('hkCarDealer_rates', JSON.stringify(rates));
     localStorage.setItem('hkCarDealer_fees', JSON.stringify(defaultFees));
-    // 儲存庫存
     localStorage.setItem('hkCarDealer_inventory', JSON.stringify(carInventory));
     
     console.log('設定已儲存！');
@@ -278,20 +332,22 @@ export default function App() {
     if(window.confirm('確定要重置所有設定回預設值嗎？')) {
       setRates(DEFAULT_RATES);
       setDefaultFees(DEFAULT_FEES);
-      setCarInventory(DEFAULT_INVENTORY); // 重置庫存
+      setCarInventory(DEFAULT_INVENTORY);
       localStorage.removeItem('hkCarDealer_rates');
       localStorage.removeItem('hkCarDealer_fees');
       localStorage.removeItem('hkCarDealer_inventory');
       
       setCurrentOriginFees(DEFAULT_FEES[selectedCountry].origin);
       setCurrentHKFees(DEFAULT_FEES[selectedCountry].hk);
+      setCarPrice('');
+      setApprovedRetailPrice('');
     }
   };
 
   // --- Calculations ---
   
   const currentCurrency = COUNTRIES[selectedCountry];
-  const currentRate = rates[selectedCountry] || 0; // Guard against undefined rate
+  const currentRate = parseFloat(rates[selectedCountry]) || 0;
 
   // 1. Car Cost in HKD
   const carPriceVal = parseFloat(carPrice) || 0;
@@ -304,23 +360,28 @@ export default function App() {
   });
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
-  // 3. HK Fees in HKD
-  let totalHKFees = 0;
+  // 3. Calculated First Registration Tax (FRT)
+  const calculatedFRT = calculateFRT(approvedRetailPrice);
+
+  // 4. HK Fees in HKD (excluding FRT)
+  let totalHKFeesWithoutFRT = 0;
   Object.values(currentHKFees).forEach(fee => {
-    totalHKFees += parseFloat(fee.val) || 0;
+    totalHKFeesWithoutFRT += parseFloat(fee.val) || 0;
   });
 
-  // 4. Grand Total
+  // 5. Total HK Fees (HK Fees + FRT)
+  const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
+
+  // 6. Grand Total
   const grandTotal = carPriceHKD + totalOriginFeesHKD + totalHKFees;
 
   // Formatters
   const fmtMoney = (amount, currency = 'HKD') => {
-    // Check if amount is valid number
     if (isNaN(amount) || amount === null) return 'N/A';
     return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
   };
-
-  // --- Handlers ---
+  
+  // --- Handlers (Inventory and Fees remain largely the same, but history changes) ---
 
   const handleCarDetailChange = (field, value) => {
     setCarDetails(prev => {
@@ -341,7 +402,7 @@ export default function App() {
     });
   };
 
-  // --- Inventory Logic ---
+  // ... (Inventory logic remains the same)
 
   // Manufacturer (Mfr) Options
   const manufacturerOptions = useMemo(() => Object.keys(carInventory), [carInventory]);
@@ -367,8 +428,8 @@ export default function App() {
     const modelData = mfrData.models.find(m => m.id === carDetails.model);
     return modelData ? modelData.codes : [];
   }, [carInventory, carDetails.manufacturer, carDetails.model]);
-
-  // --- Settings Inventory Management Handlers ---
+  
+  // ... (Settings Inventory Management Handlers remain the same)
 
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
@@ -381,7 +442,7 @@ export default function App() {
       [name]: { models: [] }
     }));
     setNewManufacturer('');
-    saveSettings(); // Auto-save after action
+    saveSettings(); 
   };
 
   const handleDeleteManufacturer = (mfrName) => {
@@ -405,7 +466,6 @@ export default function App() {
     const yearsArray = newModel.years.split(',').map(s => s.trim()).filter(s => s);
     const codesArray = newModel.codes.split(',').map(s => s.trim()).filter(s => s);
 
-    // Check if model already exists
     if (carInventory[mfrName].models.some(m => m.id === modelId)) {
         console.log('該型號已存在。');
         return;
@@ -441,8 +501,8 @@ export default function App() {
     }
   };
 
-  // --- Other Handlers (Fees/Rates) ---
-  
+  // ... (Other Handlers: Fees/Rates remain the same)
+
   const handleOriginFeeChange = (key, value) => {
     setCurrentOriginFees(prev => ({
       ...prev,
@@ -474,24 +534,41 @@ export default function App() {
     }));
   };
 
+  // --- History Save (Crucial change for data isolation) ---
   const saveToHistory = () => {
-    if (grandTotal === 0) {
-      console.log('估算總額為 0，無法儲存。');
+    if (grandTotal === 0 || carPriceVal === 0) {
+      console.log('估算總額為 0 或車價未輸入，無法儲存。');
       return;
     }
 
+    // 將所有計算時使用的數值和結構全部存入記錄中，確保不受未來設定更改影響
     const newRecord = {
       id: Date.now(),
       date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hono_Kong' }),
       countryId: selectedCountry,
-      // 儲存選定的車輛資料
+      
+      // 1. 儲存所有輸入和當時的匯率
+      inputValues: {
+          rate: currentRate,
+          carPriceNative: carPriceVal,
+          approvedRetailPrice: parseFloat(approvedRetailPrice) || 0,
+      },
+      
+      // 2. 儲存選定的車輛資料 (String Values)
       carDetails: { ...carDetails }, 
+
+      // 3. 儲存實際計算時使用的費用結構 (包括 label 和 val)
+      feesAtTimeOfSaving: {
+          origin: currentOriginFees,
+          hk: currentHKFees, // 這是沒有 FRT 的本地費用
+      },
+      
+      // 4. 儲存計算結果明細
       calculations: {
-        rate: currentRate,
-        carPriceNative: carPriceVal,
         carPriceHKD,
         totalOriginFeesHKD,
-        totalHKFees,
+        totalHKFeesWithoutFRT,
+        calculatedFRT,         // 首次登記稅
         grandTotal
       }
     };
@@ -515,8 +592,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       
-      {/* Header */}
-      <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-40"> {/* Z-index bumped for autocomplete */}
+      {/* Header (Unchanged) */}
+      <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-40"> 
         <div className="max-w-3xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Truck className="w-6 h-6 text-blue-300" />
@@ -558,7 +635,7 @@ export default function App() {
         {activeTab === 'calculator' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             
-            {/* Country Selector */}
+            {/* Country Selector (Unchanged) */}
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {Object.values(COUNTRIES).map(c => (
                 <button
@@ -567,17 +644,15 @@ export default function App() {
                   className={`flex-1 min-w-[100px] py-3 px-4 rounded-xl border flex flex-col items-center justify-center transition-all ${selectedCountry === c.id ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600 shadow-md' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                 >
                   <span className="text-lg font-bold">{c.name.split(' ')[0]}</span>
-                  <span className="text-xs text-gray-500">匯率: {rates[c.id]}</span>
+                  <span className="text-xs text-gray-500">匯率: {currentRate}</span>
                 </button>
               ))}
             </div>
 
-            {/* Car Details Form - Using Autocomplete */}
+            {/* Car Details Form (Unchanged) */}
             <Card className="p-5">
               <SectionHeader icon={Car} title="車輛資料 (可選填)" color="text-gray-600" />
               <div className="grid grid-cols-2 gap-4">
-                
-                {/* 1. Manufacturer */}
                 <AutocompleteInput 
                   label="製造商 (Manufacturer)" 
                   placeholder="e.g. Toyota" 
@@ -585,8 +660,6 @@ export default function App() {
                   onChange={(v) => handleCarDetailChange('manufacturer', v)}
                   options={manufacturerOptions}
                 />
-                
-                {/* 2. Model (Disabled if no Manufacturer selected) */}
                 <AutocompleteInput 
                   label="型號 (Model)" 
                   placeholder="e.g. Alphard" 
@@ -595,8 +668,6 @@ export default function App() {
                   options={modelOptions}
                   disabled={!carDetails.manufacturer}
                 />
-                
-                {/* 3. Year (Disabled if no Model selected) */}
                 <AutocompleteInput 
                   label="製造年份 (Year)" 
                   placeholder="e.g. 2023" 
@@ -605,8 +676,6 @@ export default function App() {
                   options={yearOptions}
                   disabled={!carDetails.model}
                 />
-                
-                {/* 4. Code (Disabled if no Model selected) */}
                 <AutocompleteInput 
                   label="型號代碼 (Model Code)" 
                   placeholder="e.g. AGH30" 
@@ -620,19 +689,27 @@ export default function App() {
 
             {/* Main Input: Car Price */}
             <Card className="p-5 border-l-4 border-l-blue-600">
-              <SectionHeader icon={DollarSign} title="車輛成本 (來源地)" color="text-blue-600" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <SectionHeader icon={DollarSign} title="車輛成本及稅基 (香港/來源地)" color="text-blue-600" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <InputGroup 
-                  label={`車價 (${currentCurrency.currency})`}
+                  label={`來源地車價 (${currentCurrency.currency})`}
                   prefix={currentCurrency.symbol}
                   value={carPrice}
                   onChange={setCarPrice}
                   placeholder="例如: 1500000"
                 />
-                <div className="bg-gray-100 p-3 rounded-lg text-right mb-3">
-                  <span className="text-xs text-gray-500 block">折合港幣 (不含稅費)</span>
+                {/* 新增 PRP 輸入 */}
+                <InputGroup 
+                  label="核准公布零售價 (PRP) - 首次登記稅基 (HKD)"
+                  prefix="$"
+                  value={approvedRetailPrice}
+                  onChange={setApprovedRetailPrice}
+                  placeholder="例如: 350000"
+                />
+              </div>
+              <div className="bg-gray-100 p-3 rounded-lg text-right mt-4">
+                  <span className="text-xs text-gray-500 block">來源地車價折合港幣 (不含稅費)</span>
                   <span className="text-xl font-bold text-gray-800">{fmtMoney(carPriceHKD)}</span>
-                </div>
               </div>
             </Card>
 
@@ -651,7 +728,7 @@ export default function App() {
                     />
                   ))}
                   <div className="pt-2 border-t mt-2 flex justify-between items-center text-sm">
-                    <span className="text-gray-500">小計 (HKD)</span>
+                    <span className="text-gray-500">當地雜費小計 (HKD)</span>
                     <span className="font-bold text-indigo-700">{fmtMoney(totalOriginFeesHKD)}</span>
                   </div>
                 </div>
@@ -659,8 +736,9 @@ export default function App() {
 
               {/* HK Fees */}
               <Card className="p-4">
-                <SectionHeader icon={Ship} title="香港本地雜費 (HKD)" color="text-green-600" />
+                <SectionHeader icon={Ship} title="香港本地雜費及首次登記稅 (HKD)" color="text-green-600" />
                 <div className="space-y-2">
+                  {/* 可編輯的香港費用 */}
                   {Object.entries(currentHKFees).map(([key, item]) => (
                     <InputGroup
                       key={key}
@@ -670,8 +748,19 @@ export default function App() {
                       onChange={(val) => handleHKFeeChange(key, val)}
                     />
                   ))}
+                  
+                  {/* 首次登記稅 (FRT) - 顯示計算結果 */}
+                  <div className="flex justify-between items-center pt-2 mt-2 border-t border-dashed">
+                      <span className="text-sm font-bold text-red-600">
+                          首次登記稅 (FRT)
+                          <p className='text-xs font-normal text-gray-500'>基於PRP {fmtMoney(approvedRetailPrice)}</p>
+                      </span>
+                      <span className="font-bold text-red-600">{fmtMoney(calculatedFRT)}</span>
+                  </div>
+
+
                   <div className="pt-2 border-t mt-2 flex justify-between items-center text-sm">
-                    <span className="text-gray-500">小計</span>
+                    <span className="text-gray-500">香港總費用 (含FRT)</span>
                     <span className="font-bold text-green-700">{fmtMoney(totalHKFees)}</span>
                   </div>
                 </div>
@@ -684,7 +773,7 @@ export default function App() {
                 <div className="flex-1">
                   <div className="flex justify-between items-center mb-1">
                      <span className="text-gray-400 text-xs sm:text-sm">預計總成本 (HKD)</span>
-                     <span className="text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-300">匯率 {currentRate}</span>
+                     <span className="text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-300">匯率 @ {currentRate}</span>
                   </div>
                   <div className="text-3xl sm:text-4xl font-bold tracking-tight text-white flex items-baseline gap-1">
                     {fmtMoney(grandTotal)}
@@ -692,7 +781,8 @@ export default function App() {
                   <div className="mt-1 text-xs text-gray-500 hidden sm:flex gap-4">
                     <span>車價: {fmtMoney(carPriceHKD)}</span>
                     <span>當地雜: {fmtMoney(totalOriginFeesHKD)}</span>
-                    <span>香港雜: {fmtMoney(totalHKFees)}</span>
+                    <span>香港雜費: {fmtMoney(totalHKFeesWithoutFRT)}</span>
+                    <span className='text-red-400'>FRT: {fmtMoney(calculatedFRT)}</span>
                   </div>
                 </div>
                 
@@ -709,7 +799,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- HISTORY TAB (Unchanged) --- */}
+        {/* --- HISTORY TAB --- */}
         {activeTab === 'history' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
              <div className="flex justify-between items-center">
@@ -760,15 +850,16 @@ export default function App() {
                         <div className="text-2xl font-bold text-blue-900">
                           {fmtMoney(item.calculations.grandTotal)}
                         </div>
+                        {/* 使用歷史記錄中的匯率 */}
                         <div className="text-xs text-gray-500">
-                          匯率 @ {item.calculations.rate}
+                          當時匯率 @ {item.inputValues.rate}
                         </div>
                       </div>
                     </div>
                     
-                    <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-3 gap-2 text-xs text-center text-gray-500">
+                    <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-4 gap-2 text-xs text-center text-gray-500">
                       <div>
-                        <div className="font-medium text-gray-400">當地車價 (HKD)</div>
+                        <div className="font-medium text-gray-400">車價 (HKD)</div>
                         <div>{fmtMoney(item.calculations.carPriceHKD)}</div>
                       </div>
                       <div>
@@ -777,7 +868,12 @@ export default function App() {
                       </div>
                       <div>
                         <div className="font-medium text-gray-400">香港雜費 (HKD)</div>
-                        <div>{fmtMoney(item.calculations.totalHKFees)}</div>
+                        <div>{fmtMoney(item.calculations.totalHKFeesWithoutFRT)}</div>
+                      </div>
+                       <div>
+                        <div className="font-medium text-red-600">首次登記稅 (FRT)</div>
+                        <div className='text-red-600'>{fmtMoney(item.calculations.calculatedFRT)}</div>
+                        <div className='text-gray-400'>(PRP {fmtMoney(item.inputValues.approvedRetailPrice)})</div>
                       </div>
                     </div>
                   </Card>
@@ -787,7 +883,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- SETTINGS TAB --- */}
+        {/* --- SETTINGS TAB (Inventory and Fees management remain the same) --- */}
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
             
@@ -864,13 +960,13 @@ export default function App() {
                                 className="px-3 py-1 border rounded-md text-sm"
                              />
                              <input
-                                placeholder="年份 (e.g. 2023, 2022)"
+                                placeholder="年份 (e.g. 2023, 2022) - 以逗號分隔"
                                 value={newModel.years}
                                 onChange={(e) => setNewModel(prev => ({ ...prev, years: e.target.value }))}
                                 className="px-3 py-1 border rounded-md text-sm"
                              />
                              <input
-                                placeholder="代碼 (e.g. NSP170, XP170)"
+                                placeholder="代碼 (e.g. NSP170, XP170) - 以逗號分隔"
                                 value={newModel.codes}
                                 onChange={(e) => setNewModel(prev => ({ ...prev, codes: e.target.value }))}
                                 className="px-3 py-1 border rounded-md text-sm"
@@ -911,7 +1007,7 @@ export default function App() {
             </Card>
 
 
-            {/* Exchange Rate and Fee Management (Unchanged) */}
+            {/* Exchange Rate and Fee Management */}
 
             <Card className="p-5">
               <SectionHeader icon={DollarSign} title="匯率管理 (Exchange Rates)" />
@@ -928,7 +1024,7 @@ export default function App() {
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-yellow-50 p-2 rounded">
                 <Info className="w-4 h-4 mt-0.5 text-yellow-600" />
-                <p>修改此處匯率會影響所有計算結果。請定期更新以保持準確性。</p>
+                <p>修改此處匯率會影響**當前**和**未來**的計算。已儲存的歷史記錄**不受影響**。</p>
               </div>
             </Card>
 
@@ -937,7 +1033,7 @@ export default function App() {
                 <div key={c.id} className="border-t pt-6 first:border-t-0 first:pt-0">
                   <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
                     <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded text-sm">{c.id}</span>
-                    {c.name} 預設費用
+                    {c.name} 預設費用 (不含首次登記稅)
                   </h3>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -970,7 +1066,7 @@ export default function App() {
                     {/* HK Defaults */}
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                        <h4 className="font-medium text-blue-800 mb-3 text-sm">
-                         香港費用 (HKD)
+                         香港固定費用 (HKD)
                        </h4>
                        {Object.entries(defaultFees[c.id].hk).map(([key, item]) => (
                         <div key={key} className="flex items-center gap-2 mb-2">
