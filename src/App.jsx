@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2 } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft } from 'lucide-react';
 
 // --- Firebase Imports (使用標準模組路徑) ---
+// 這裡只導入需要的 Firebase 函數，配置會在代碼中自動從全局變數加載。
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from 'firebase/auth';
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
@@ -9,31 +10,10 @@ import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, de
 
 // --- Global Constants & FRT Calculation ---
 
-// 🚨🚨🚨 請將以下 PLACEHOLDER 替換為您自己的 Firebase 專案配置 🚨🚨🚨
-// 這是手動配置區塊。如果您在 Canvas 環境之外運行，請將此處替換為您的實際 Firebase 配置。
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
-  authDomain: "hk-car-dealer-tool.firebaseapp.com",
-  projectId: "hk-car-dealer-tool",
-  storageBucket: "hk-car-dealer-tool.firebasestorage.app",
-  messagingSenderId: "53318644210",
-  appId: "1:53318644210:web:43a35553f825247c7cbb6b",
-  measurementId: "G-92FJL41BGT"
-};
-
-// 在 GitHub/本地模式下，我們直接使用硬編碼的配置
-const firebaseConfig = FIREBASE_CONFIG;
-// 在本地運行時，我們沒有 Canvas 注入的 Auth Token，因此強制為 null
-const initialAuthToken = null; 
-// 應用程式 ID，用於 Firestore 路徑，在本地模式下可以使用 Project ID
-const appId = FIREBASE_CONFIG.projectId || 'manual-app-id'; 
-// 🚨🚨🚨 配置替換結束 🚨🚨🚨
-
-
-// 在 HTML/React 應用中，請務必設定日誌級別，以便在控制台中查看 Firebase 狀態
-if (process.env.NODE_ENV !== 'production') {
-  setLogLevel('debug');
-}
+// 1. 🚨 檢查全局變數是否存在，並從 Canvas 注入的配置中獲取 Firebase 設置 🚨
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
 
 const DEFAULT_RATES = {
   JP: 0.053, 
@@ -246,56 +226,67 @@ export default function App() {
   // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
-  const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' }); // 使用 useState
+  const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' }); 
   
   // --- Status Message State ---
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
+
+  // --- Custom Confirmation Modal State ---
+  const [modalConfig, setModalConfig] = useState(null); // { title: string, message: string, onConfirm: function, type: 'warning' | 'danger' }
+  
+  // --- Firebase connection status ---
+  const isFirebaseConnected = useMemo(() => !!db && !!auth, [db, auth]);
+
 
   // --- Firestore Path Helper ---
   const getHistoryCollectionRef = useCallback((dbInstance, currentUserId) => {
     if (!dbInstance || !currentUserId) return null;
     // Private data path: /artifacts/{appId}/users/{userId}/history
     return collection(dbInstance, `artifacts/${appId}/users/${currentUserId}/history`);
-  }, []);
+  }, []); // appId is already defined globally
+
 
   // --- Firebase Initialization and Authentication ---
   useEffect(() => {
-    // 檢查 firebaseConfig 是否已由用戶提供 (即使是在本地模式)
-    if (firebaseConfig && firebaseConfig.projectId && firebaseConfig.apiKey !== 'YOUR_API_KEY') {
+    // 檢查 Canvas 變數是否已注入有效的配置
+    if (firebaseConfig && firebaseConfig.projectId) {
       try {
+        // 確保 initializeApp 只使用 Canvas 注入的配置
         const app = initializeApp(firebaseConfig);
         const firestore = getFirestore(app);
         const authInstance = getAuth(app);
         
-        // --- FIX: 强制使用内存持久性以避免在沙盒环境中因本地存储被阻止而导致的錯誤 ---
+        // 2. 🚨 設置身份驗證持久性為 inMemoryPersistence 🚨
         setPersistence(authInstance, inMemoryPersistence).catch((e) => {
             console.error("Failed to set in-memory persistence:", e);
         });
-        // --- END FIX ---
 
         setDb(firestore);
         setAuth(authInstance);
 
-        // Sign in or listen for auth state
         const unsubscribe = onAuthStateChanged(authInstance, (user) => {
           if (user) {
             setUserId(user.uid);
+            console.log("Firebase Auth State Changed: Logged in as", user.uid);
           } else {
-            // 在本地模式下，我們無法使用 custom token，因此直接使用匿名登入
+            // 如果沒有登入，且沒有自定義 token，則使用匿名登入
             signInAnonymously(authInstance).then(res => {
               setUserId(res.user.uid);
+              console.log("Firebase Auth: Signed in anonymously as", res.user.uid);
             }).catch(e => {
               console.error("Anonymous sign in failed:", e);
-              setUserId('guest'); // Fallback identifier
+              setUserId('guest-' + crypto.randomUUID()); // Fallback identifier
             });
           }
           setIsAuthReady(true);
         });
 
-        // 在本地模式下，initialAuthToken 會是 null，所以這個區塊會被跳過，直接進入 onAuthStateChanged 處理匿名登入
+        // 如果 Canvas 注入了自定義 token，則使用它登入
         if (initialAuthToken) {
-           signInWithCustomToken(authInstance, initialAuthToken).catch(e => {
-            console.warn("Custom token sign in failed, falling back to anonymous:", e);
+           signInWithCustomToken(authInstance, initialAuthToken).then(userCredential => {
+             console.log("Firebase Auth: Signed in with custom token.");
+           }).catch(e => {
+            console.warn("Custom token sign in failed, falling back to onAuthStateChanged handler:", e);
            });
         }
         
@@ -305,22 +296,22 @@ export default function App() {
         showStatus('Firebase 初始化失敗，請檢查配置。', 'error');
       }
     } else {
+      // 本地/會話模式（如果沒有提供 Canvas 變數）
       setIsAuthReady(true);
-      setUserId(crypto.randomUUID()); // Use random ID for session mode if no config
-      console.warn("Running in non-persistent session mode. Please provide Firebase config.");
-      showStatus('未提供有效的 Firebase 配置。數據將在重新整理後清除。', 'error');
+      setUserId('session-' + crypto.randomUUID()); 
+      console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
+      showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
     }
   }, [initialAuthToken]); // Run only once on mount
 
   // --- Firestore History Listener (onSnapshot) ---
   useEffect(() => {
-    if (!isAuthReady || !db || !userId) return; // Wait for Firebase and Auth
+    // 3. 🚨 確保所有 Firestore 操作都在身份驗證就緒後執行 🚨
+    if (!isAuthReady || !db || !userId) return; 
 
     const historyRef = getHistoryCollectionRef(db, userId);
     
-    // Order by the 'timestamp' field (if we use it) or simply load.
     // NOTE: Avoid orderBy in the query to prevent index missing errors.
-    // Instead, sort locally later.
     const q = query(historyRef); 
     
     setIsHistoryLoading(true);
@@ -331,15 +322,16 @@ export default function App() {
         ...doc.data()
       }));
 
-      // Local sorting by date (descending) as Firestore orderBy can require indexes
+      // Local sorting by date (descending)
       fetchedHistory.sort((a, b) => {
-          const dateA = a.date || ''; // Ensure date exists
+          const dateA = a.date || ''; 
           const dateB = b.date || '';
           return dateB.localeCompare(dateA);
       });
       
       setHistory(fetchedHistory);
       setIsHistoryLoading(false);
+      console.log(`History loaded: ${fetchedHistory.length} records.`);
     }, (error) => {
       console.error("Error fetching history:", error);
       setIsHistoryLoading(false);
@@ -377,23 +369,27 @@ export default function App() {
   
   // --- Data Saving Handlers (Firestore/Settings) ---
   const saveSettings = () => {
-    // NOTE: In this context, settings are only stored in memory for simplicity,
-    // but a real application would also save these to Firestore (e.g., in a settings doc)
+    // NOTE: Settings are stored in memory only.
     showStatus('設定已成功儲存到記憶體！', 'success');
   };
 
   const resetSettings = () => {
-    // Custom modal instead of window.confirm
-    if(window.confirm('確定要重置所有設定回預設值嗎？')) {
-      setRates(DEFAULT_RATES);
-      setDefaultFees(DEFAULT_FEES);
-      setCarInventory(DEFAULT_INVENTORY);
-      showStatus('所有設定已重置回預設值。', 'success');
-      // Reset current calculator view to reflect new defaults
-      setSelectedCountry('JP');
-      setCurrentOriginFees(DEFAULT_FEES['JP'].origin);
-      setCurrentHKFees(DEFAULT_FEES['JP'].hk);
-    }
+    setModalConfig({
+      title: '確認重置所有設定',
+      message: '確定要重置所有設定回預設值嗎？重置後您需要重新儲存自訂匯率和費用。此操作不可復原。',
+      onConfirm: () => {
+        setRates(DEFAULT_RATES);
+        setDefaultFees(DEFAULT_FEES);
+        setCarInventory(DEFAULT_INVENTORY);
+        showStatus('所有設定已重置回預設值。', 'success');
+        // Reset current calculator view to reflect new defaults
+        setSelectedCountry('JP');
+        setCurrentOriginFees(DEFAULT_FEES['JP'].origin);
+        setCurrentHKFees(DEFAULT_FEES['JP'].hk);
+        setModalConfig(null);
+      },
+      type: 'warning'
+    });
   };
   
   // Update Fee structure in state, preparing for saving
@@ -424,8 +420,8 @@ export default function App() {
 
 
   const saveToHistory = async () => {
-    if (!db || !userId) {
-        return showStatus('數據庫尚未連接，請稍候...', 'error');
+    if (!isFirebaseConnected || !userId) {
+        return showStatus('數據庫尚未連接或用戶未驗證，請稍候...', 'error');
     }
     
     // --- Pre-check: Ensure critical fields are non-zero ---
@@ -452,7 +448,7 @@ export default function App() {
       date: formattedDate,
       timestamp: now.toISOString(), // Use ISO string for consistent sorting in Firestore (if needed)
       countryId: selectedCountry,
-      isLocked: false, // New field for the locking feature
+      isLocked: false, 
       
       inputValues: {
           rate: currentRate,
@@ -491,27 +487,36 @@ export default function App() {
     }
   };
 
-  const deleteHistoryItem = async (id, isLocked) => {
-    if (isLocked) {
+  const deleteHistoryItem = async (item) => {
+    if (item.isLocked) {
         return showStatus('此記錄已被鎖定，請先解鎖才能刪除。', 'error');
     }
-    if (!db || !userId) return;
-
-    // Custom modal instead of window.confirm
-    if (window.confirm('確定要刪除這條記錄嗎？刪除後無法復原。')) {
-      try {
-        const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
-        await deleteDoc(historyDocRef);
-        showStatus('記錄已成功刪除！', 'success');
-      } catch (e) {
-        console.error("Failed to delete history record:", e);
-        showStatus('刪除記錄失敗，請重試。', 'error');
-      }
-    }
+    
+    setModalConfig({
+        title: '確認刪除記錄',
+        message: `確定要刪除日期為 ${item.date} 的估價記錄嗎？刪除後無法復原。`,
+        onConfirm: async () => {
+            if (!isFirebaseConnected || !userId) {
+                setModalConfig(null);
+                return showStatus('數據庫尚未連接，無法刪除', 'error');
+            }
+            try {
+                const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, item.id);
+                await deleteDoc(historyDocRef);
+                showStatus('記錄已成功刪除！', 'success');
+                setModalConfig(null);
+            } catch (e) {
+                console.error("Failed to delete history record:", e);
+                showStatus('刪除記錄失敗，請重試。', 'error');
+                setModalConfig(null);
+            }
+        },
+        type: 'danger'
+    });
   };
   
   const toggleLockHistoryItem = async (id, currentLockState) => {
-      if (!db || !userId) return;
+      if (!isFirebaseConnected || !userId) return;
 
       try {
         const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
@@ -523,6 +528,29 @@ export default function App() {
         console.error("Failed to toggle lock status:", e);
         showStatus('更新鎖定狀態失敗。', 'error');
       }
+  };
+  
+  // --- Load History Item to Calculator ---
+  const loadHistoryItem = (item) => {
+    const { countryId, inputValues, carDetails, feesAtTimeOfSaving } = item;
+    
+    // 1. Switch Country and sync Fees
+    setSelectedCountry(countryId);
+    
+    // 2. Load Input Values
+    setCarPrice(inputValues.carPriceNative.toString());
+    setApprovedRetailPrice(inputValues.approvedRetailPrice.toString());
+    
+    // 3. Load Car Details
+    setCarDetails(carDetails);
+    
+    // 4. Load Fees
+    setCurrentOriginFees(feesAtTimeOfSaving.origin);
+    setCurrentHKFees(feesAtTimeOfSaving.hk);
+    
+    // 5. Switch Tab
+    setActiveTab('calculator');
+    showStatus('歷史記錄已載入到計算器，請檢查並重新計算。', 'success');
   };
 
 
@@ -538,15 +566,20 @@ export default function App() {
   };
 
   const handleDeleteManufacturer = (mfrName) => {
-    // Custom modal instead of window.confirm
-    if (window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`)) {
-      setCarInventory(prev => {
-        const { [mfrName]: _, ...rest } = prev;
-        return rest;
-      });
-      setEditingManufacturer(null);
-      saveSettings(); 
-    }
+    setModalConfig({
+        title: '確認刪除製造商',
+        message: `確定要刪除製造商 "${mfrName}" 及其所有車型嗎？此操作不可復原。`,
+        onConfirm: () => {
+            setCarInventory(prev => {
+                const { [mfrName]: _, ...rest } = prev;
+                return rest;
+            });
+            setEditingManufacturer(null);
+            saveSettings(); 
+            setModalConfig(null);
+        },
+        type: 'danger'
+    });
   };
   
   const handleAddModel = (mfrName) => {
@@ -569,14 +602,19 @@ export default function App() {
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
-    // Custom modal instead of window.confirm
-    if (window.confirm(`確定要刪除型號 "${modelId}" 嗎？`)) {
-      setCarInventory(prev => ({
-        ...prev,
-        [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
-      }));
-      saveSettings();
-    }
+    setModalConfig({
+        title: '確認刪除型號',
+        message: `確定要刪除型號 "${modelId}" 嗎？此操作不可復原。`,
+        onConfirm: () => {
+            setCarInventory(prev => ({
+                ...prev,
+                [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
+            }));
+            saveSettings();
+            setModalConfig(null);
+        },
+        type: 'danger'
+    });
   };
 
 
@@ -591,7 +629,6 @@ export default function App() {
 
   let totalOriginFeesNative = 0;
   // Sum native origin fees, ensuring each fee value is treated as a number
-  // Object.values(currentOriginFees || {}) - 確保在 TypeError 發生時能安全迭代
   Object.values(currentOriginFees || {}).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
@@ -601,7 +638,6 @@ export default function App() {
 
   let totalHKFeesWithoutFRT = 0;
   // Sum local HK fees, ensuring each fee value is treated as a number
-  // Object.values(currentHKFees || {}) - 確保在 TypeError 發生時能安全迭代
   Object.values(currentHKFees || {}).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
 
   const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
@@ -646,12 +682,54 @@ export default function App() {
     return modelData ? modelData.codes : [];
   }, [carInventory, carDetails.manufacturer, carDetails.model]);
   
+  
+  // --- Custom Confirmation Modal Component ---
+  const ConfirmationModal = () => {
+    if (!modalConfig) return null;
+
+    const { title, message, onConfirm, type } = modalConfig;
+    const isDanger = type === 'danger';
+    const bgColor = isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-yellow-600 hover:bg-yellow-700';
+
+    return (
+      <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full animate-in zoom-in-95 fade-in duration-200">
+          <div className={`p-4 border-b ${isDanger ? 'border-red-100 bg-red-50' : 'border-yellow-100 bg-yellow-50'}`}>
+            <h3 className={`text-lg font-bold flex items-center gap-2 ${isDanger ? 'text-red-800' : 'text-yellow-800'}`}>
+              {isDanger ? <AlertTriangle className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+              {title}
+            </h3>
+          </div>
+          <div className="p-4 text-gray-700 text-sm">
+            {message}
+          </div>
+          <div className="flex justify-end gap-3 p-4 bg-gray-50 border-t">
+            <button
+              onClick={() => setModalConfig(null)}
+              className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors text-sm font-medium"
+            >
+              取消
+            </button>
+            <button
+              onClick={onConfirm}
+              className={`px-4 py-2 ${bgColor} text-white rounded-lg transition-colors text-sm font-medium`}
+            >
+              {isDanger ? '確認刪除' : '確認執行'}
+            </button>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+  
 
   // --- Render Logic ---
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       
+      <ConfirmationModal /> 
+
       {/* Header */}
       <div className="bg-gray-900 text-white p-4 shadow-md sticky top-0 z-40"> 
         <div className="max-w-3xl mx-auto flex justify-between items-center">
@@ -659,8 +737,9 @@ export default function App() {
             <Truck className="w-6 h-6 text-gray-300" />
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
-            <span className="text-xs bg-green-600 px-2 py-0.5 rounded-full" title="數據已儲存在雲端，重新整理不會遺失。">
-              Firestore 模式 (持久化)
+            {/* 根據是否連接 Firebase 顯示狀態 */}
+            <span className={`text-xs px-2 py-0.5 rounded-full ${isFirebaseConnected ? 'bg-green-600' : 'bg-red-600'}`} title={isFirebaseConnected ? "數據已儲存在雲端，重新整理不會遺失。" : "數據未持久化，重新整理將會清除。"}>
+              {isFirebaseConnected ? '雲端模式' : '會話模式'}
             </span>
             {userId && <span className="text-xs text-gray-400 ml-2 truncate hidden sm:block">用戶ID: {userId}</span>}
           </div>
@@ -860,7 +939,7 @@ export default function App() {
                 
                 <button 
                   onClick={saveToHistory}
-                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0 || !db} 
+                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0 || !isFirebaseConnected} 
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
@@ -921,6 +1000,13 @@ export default function App() {
                       </div>
                       <div className='flex gap-2 items-center'>
                           <button
+                            onClick={() => loadHistoryItem(item)}
+                            className={`p-1 rounded transition-colors text-blue-500 hover:bg-blue-100`}
+                            title='載入到計算器'
+                          >
+                            <ArrowLeft className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => toggleLockHistoryItem(item.id, item.isLocked)}
                             className={`p-1 rounded transition-colors ${item.isLocked ? 'text-red-600 hover:bg-red-100' : 'text-gray-400 hover:text-green-600 hover:bg-green-100'}`}
                             title={item.isLocked ? '已鎖定，點擊解鎖' : '點擊鎖定記錄'}
@@ -928,7 +1014,7 @@ export default function App() {
                             {item.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                           </button>
                           <button 
-                            onClick={() => deleteHistoryItem(item.id, item.isLocked)}
+                            onClick={() => deleteHistoryItem(item)}
                             disabled={item.isLocked}
                             className={`p-1 rounded transition-colors ${item.isLocked ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
                             title={item.isLocked ? '請先解鎖才能刪除' : '刪除記錄'}
