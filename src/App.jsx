@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle } from 'lucide-react';
 
-// --- Local Storage Keys ---
-const LS_SETTINGS_KEY = 'carDealerSettings';
-const LS_HISTORY_KEY = 'carDealerHistory';
-
 // --- Global Constants & FRT Calculation ---
 
 const DEFAULT_RATES = {
@@ -53,7 +49,7 @@ const calculateFRT = (prp) => {
     return frt;
 };
 
-// --- Helper Components (Same as before) ---
+// --- Helper Components ---
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
     {children}
@@ -188,13 +184,14 @@ const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1
 // --- Main App Component ---
 
 export default function App() {
-  // --- Application State (Synced with LocalStorage) ---
+  // --- Application State (In-Memory Session Mode) ---
   const [activeTab, setActiveTab] = useState('calculator'); 
   const [selectedCountry, setSelectedCountry] = useState('JP');
+  // Initialize with defaults, as there is no loading from storage
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [defaultFees, setDefaultFees] = useState(DEFAULT_FEES);
   const [carInventory, setCarInventory] = useState(DEFAULT_INVENTORY); 
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState([]); // Empty history for session mode
   
   // --- Temporary Calculator State ---
   const [carPrice, setCarPrice] = useState('');
@@ -222,78 +219,34 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
 
-  // --- 1. Data Loading from LocalStorage ---
-  useEffect(() => {
-    // Load Settings
-    const storedSettings = localStorage.getItem(LS_SETTINGS_KEY);
-    if (storedSettings) {
-      try {
-        const parsedSettings = JSON.parse(storedSettings);
-        setRates(parsedSettings.rates || DEFAULT_RATES);
-        setDefaultFees(parsedSettings.defaultFees || DEFAULT_FEES);
-        setCarInventory(parsedSettings.carInventory || DEFAULT_INVENTORY);
-      } catch (e) {
-        console.error("Failed to load settings from localStorage:", e);
-      }
-    }
-    
-    // Load History
-    const storedHistory = localStorage.getItem(LS_HISTORY_KEY);
-    if (storedHistory) {
-      try {
-        const parsedHistory = JSON.parse(storedHistory);
-        // Ensure history is sorted by date/time (ID is timestamp)
-        parsedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
-        setHistory(parsedHistory);
-      } catch (e) {
-        console.error("Failed to load history from localStorage:", e);
-      }
-    }
-  }, []); // Only runs on initial mount
-
   // When country changes, reset fees to defaults
   useEffect(() => {
     if (defaultFees[selectedCountry]) {
-      setCurrentOriginFees(defaultFees[selectedCountry].origin);
-      setCurrentHKFees(defaultFees[selectedCountry].hk);
+      // Re-initialize current calculation fees based on the defaultFees structure
+      setCurrentOriginFees(JSON.parse(JSON.stringify(defaultFees[selectedCountry].origin)));
+      setCurrentHKFees(JSON.parse(JSON.stringify(defaultFees[selectedCountry].hk)));
       setCarPrice('');
       setApprovedRetailPrice('');
     }
-  }, [selectedCountry, defaultFees]);
+  }, [selectedCountry, defaultFees]); // Runs on initial mount and when country/defaultFees change
 
-  // --- 2. Data Saving Handlers (LocalStorage Operations) ---
+  // --- Data Saving Handlers (In-Memory Operations) ---
   const showStatus = (message, type) => {
     setSaveStatus({ message, type });
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
   const saveSettings = () => {
-    try {
-        const settingsToSave = { 
-            rates, 
-            defaultFees, 
-            carInventory 
-        };
-        localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(settingsToSave));
-        showStatus('設定已成功儲存到本地！', 'success');
-    } catch (e) {
-        console.error("Failed to save settings to LocalStorage:", e);
-        showStatus('儲存設定失敗，本地儲存空間不足。', 'error');
-    }
+    // In session mode, this only confirms the successful update of the in-memory state
+    showStatus('設定已成功儲存到本次會話記憶體！(刷新將遺失)', 'success');
   };
 
   const resetSettings = () => {
-    if(window.confirm('確定要重置所有設定回預設值嗎？')) {
-      try {
-        localStorage.removeItem(LS_SETTINGS_KEY);
-        setRates(DEFAULT_RATES);
-        setDefaultFees(DEFAULT_FEES);
-        setCarInventory(DEFAULT_INVENTORY);
-        showStatus('所有設定已重置回預設值。', 'success');
-      } catch (e) {
-          console.error("Failed to reset settings:", e);
-          showStatus('重置設定失敗。', 'error');
-      }
+    if(window.confirm('確定要重置所有設定回預設值嗎？重置後重新整理將遺失所有資料。')) {
+      setRates(DEFAULT_RATES);
+      setDefaultFees(DEFAULT_FEES);
+      setCarInventory(DEFAULT_INVENTORY);
+      showStatus('所有設定已重置回預設值。', 'success');
     }
   };
   
@@ -310,7 +263,7 @@ export default function App() {
           }
         }
       };
-      // Immediately sync state for current calculation
+      // Immediately sync state for current calculation if the country is active
       if (countryId === selectedCountry) {
           if (type === 'origin') setCurrentOriginFees(newFees[countryId].origin);
           if (type === 'hk') setCurrentHKFees(newFees[countryId].hk);
@@ -340,10 +293,14 @@ export default function App() {
 
     const newRecordId = Date.now().toString(); // Use timestamp as ID
     
-    // 將所有計算時使用的數值和結構全部存入記錄中
+    // Fix: Remove timeZone option to prevent RangeError
     const newRecordContent = {
       id: newRecordId,
-      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong-Kong' }), 
+      date: new Date().toLocaleString('zh-HK', { 
+          day: '2-digit', month: '2-digit', year: 'numeric', 
+          hour: '2-digit', minute: '2-digit', second: '2-digit', 
+          hour12: false // Use 24-hour format for clarity
+      }), 
       countryId: selectedCountry,
       
       inputValues: {
@@ -355,8 +312,9 @@ export default function App() {
       carDetails: { ...carDetails }, 
 
       feesAtTimeOfSaving: {
-          origin: currentOriginFees,
-          hk: currentHKFees, 
+          // Deep clone the current calculation fees for the record
+          origin: JSON.parse(JSON.stringify(currentOriginFees)),
+          hk: JSON.parse(JSON.stringify(currentHKFees)), 
       },
       
       calculations: {
@@ -370,34 +328,29 @@ export default function App() {
 
     try {
         const updatedHistory = [newRecordContent, ...history];
-        localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(updatedHistory));
+        updatedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
         setHistory(updatedHistory);
-        showStatus('記錄成功儲存到本地！', 'success');
+        showStatus('記錄成功儲存到本次會話記憶體！(刷新將遺失)', 'success');
         
         // Go to history tab after a small delay 
         setTimeout(() => setActiveTab('history'), 800);
         
     } catch (e) {
+        // Should not happen as we are not using storage, but good practice
         console.error("Failed to add history record:", e);
-        showStatus('儲存記錄失敗，本地儲存空間不足。', 'error');
+        showStatus('儲存記錄失敗。', 'error');
     }
   };
 
   const deleteHistoryItem = (id) => {
     if (window.confirm('確定要刪除這條記錄嗎？')) {
-      try {
-          const updatedHistory = history.filter(item => item.id !== id);
-          localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(updatedHistory));
-          setHistory(updatedHistory);
-          showStatus('記錄已從本地刪除!', 'success');
-      } catch (e) {
-          console.error("Failed to delete history record:", e);
-          showStatus('刪除記錄失敗。', 'error');
-      }
+      const updatedHistory = history.filter(item => item.id !== id);
+      setHistory(updatedHistory);
+      showStatus('記錄已從會話記憶體中刪除!', 'success');
     }
   };
   
-  // --- Inventory Handlers ---
+  // --- Inventory Handlers (In-Memory) ---
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
@@ -415,8 +368,7 @@ export default function App() {
         return rest;
       });
       setEditingManufacturer(null);
-      // Wait for state to update, then save
-      setTimeout(saveSettings, 0); 
+      saveSettings(); 
     }
   };
   
@@ -436,8 +388,7 @@ export default function App() {
       [mfrName]: { ...prev[mfrName], models: [...prev[mfrName].models, newCar] }
     }));
     setNewModel({ id: '', years: '', codes: '' });
-    // Wait for state to update, then save
-    setTimeout(saveSettings, 0);
+    saveSettings(); 
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
@@ -446,8 +397,7 @@ export default function App() {
         ...prev,
         [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
       }));
-      // Wait for state to update, then save
-      setTimeout(saveSettings, 0);
+      saveSettings();
     }
   };
 
@@ -460,6 +410,7 @@ export default function App() {
   const carPriceHKD = carPriceVal * currentRate;
 
   let totalOriginFeesNative = 0;
+  // Ensure values are strings or numbers before parsing
   Object.values(currentOriginFees).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
@@ -467,6 +418,7 @@ export default function App() {
   const calculatedFRT = calculateFRT(approvedRetailPriceVal);
 
   let totalHKFeesWithoutFRT = 0;
+  // Ensure values are strings or numbers before parsing
   Object.values(currentHKFees).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
 
   const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
@@ -516,20 +468,20 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       
       {/* Header */}
-      <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-40"> 
+      <div className="bg-gray-900 text-white p-4 shadow-md sticky top-0 z-40"> 
         <div className="max-w-3xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <Truck className="w-6 h-6 text-blue-300" />
+            <Truck className="w-6 h-6 text-gray-300" />
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
-            <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full" title="數據儲存在您的瀏覽器中，不會跨設備同步。">
-              本地儲存模式
+            <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full" title="數據僅儲存在本次會話記憶體中，刷新將遺失。">
+              會話模式 (非持久化)
             </span>
           </div>
-          <div className="flex gap-1 bg-blue-800 p-1 rounded-lg">
+          <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
             <button 
               onClick={() => setActiveTab('calculator')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'calculator' ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-200 hover:text-white'}`}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'calculator' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-200 hover:text-white'}`}
             >
               <Calculator className="w-4 h-4" />
               <span className="hidden sm:inline">計算器</span>
@@ -537,7 +489,7 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-200 hover:text-white'}`}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-200 hover:text-white'}`}
             >
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">記錄</span>
@@ -545,7 +497,7 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-200 hover:text-white'}`}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-200 hover:text-white'}`}
             >
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">設定</span>
@@ -720,7 +672,7 @@ export default function App() {
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
-                  <span>記錄預算 (儲存至本地)</span>
+                  <span>記錄預算 (僅本次會話)</span>
                 </button>
               </div>
 
@@ -745,7 +697,7 @@ export default function App() {
              <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <List className="w-6 h-6 text-blue-600" />
-                本地儲存記錄
+                會話記憶體記錄
               </h2>
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
@@ -754,7 +706,7 @@ export default function App() {
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
-                <p className='text-xs text-gray-300 mt-2'>數據儲存於瀏覽器本地儲存</p>
+                <p className='text-xs text-gray-300 mt-2 font-bold text-red-500'>**注意: 數據僅儲存在本次會話記憶體中，重新整理將遺失。**</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -834,7 +786,7 @@ export default function App() {
                   <RotateCcw className="w-4 h-4" /> 重置
                 </button>
                 <button onClick={saveSettings} className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm">
-                  <Save className="w-4 h-4" /> 儲存設定到本地
+                  <Save className="w-4 h-4" /> 確認設定
                 </button>
               </div>
             </div>
@@ -962,9 +914,9 @@ export default function App() {
                   />
                 ))}
               </div>
-              <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-yellow-50 p-2 rounded">
-                <Info className="w-4 h-4 mt-0.5 text-yellow-600" />
-                <p>匯率數據儲存在本地瀏覽器中。更改後請記得按 **儲存設定**。</p>
+              <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-red-50 p-2 rounded border border-red-100">
+                <Info className="w-4 h-4 mt-0.5 text-red-600" />
+                <p className='text-red-700 font-bold'>匯率數據僅儲存在本次會話記憶體中。更改後請記得按 **確認設定**。</p>
               </div>
             </Card>
 
