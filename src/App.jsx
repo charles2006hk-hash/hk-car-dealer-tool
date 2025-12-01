@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
 
-// --- Firebase Imports ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, collection, query, onSnapshot, addDoc, deleteDoc } from 'firebase/firestore';
+// --- Firebase Imports (已修復: 使用 CDN 模組路徑來避免 Rollup/Vite 無法解析的問題) ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, collection, query, onSnapshot, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 
 // --- Global Constants & FRT Calculation ---
@@ -215,6 +215,14 @@ export default function App() {
   const [carDetails, setCarDetails] = useState({
     manufacturer: '', model: '', year: '', code: ''
   });
+  
+  // Helper to sync calculator fees when manually edited
+  const handleOriginFeeChange = (key, val) => {
+    setCurrentOriginFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
+  };
+  const handleHKFeeChange = (key, val) => {
+    setCurrentHKFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
+  };
 
   // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
