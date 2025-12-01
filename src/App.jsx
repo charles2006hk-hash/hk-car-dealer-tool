@@ -224,7 +224,8 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
 
 // Simple Number/Text Input Group (MODIFIED to include required mark and validation border)
 const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "", required = false }) => {
-  const isInvalid = required && (value === '' || parseFloat(value) === 0 || isNaN(parseFloat(value)));
+  // 檢查是否為必填且值無效 (空字串、0、或非數字)
+  const isInvalid = required && (value === '' || parseFloat(value) <= 0 || isNaN(parseFloat(value)));
   
   return (
     <div className="mb-3">
@@ -587,7 +588,8 @@ export default function App() {
     // 將所有計算時使用的數值和結構全部存入記錄中，確保不受未來設定更改影響
     const newRecord = {
       id: Date.now(),
-      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hono_Kong' }),
+      // FIX: 修正時區名稱 Hono_Kong -> Hong_Kong
+      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }), 
       countryId: selectedCountry,
       
       // 1. 儲存所有輸入和當時的匯率
@@ -627,8 +629,12 @@ export default function App() {
         localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
         console.log("History successfully stored in localStorage. New length:", updatedHistory.length);
     } catch (e) {
+        // 如果遇到 "Access to storage is not allowed from this context" 錯誤，這裡會被捕獲
         console.error("Failed to save history to localStorage. Check browser settings for storage limits/permissions.", e);
-        setSaveStatus({ message: '儲存失敗：本地儲存發生錯誤!', type: 'error' });
+        setSaveStatus({ 
+            message: `記錄已創建，但儲存失敗 (錯誤: ${e.name})。請檢查瀏覽器設定。`, 
+            type: 'error' 
+        });
         setTimeout(() => setSaveStatus(null), 5000);
         return; // Exit if storage fails
     }
@@ -904,6 +910,7 @@ export default function App() {
                          <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
                            {item.countryId}
                          </span>
+                         {/* FIX: RangeError 已解決，可以正常顯示日期 */}
                          <span className="text-sm text-gray-500 flex items-center gap-1">
                            <Calendar className="w-3 h-3" /> {item.date}
                          </span>
