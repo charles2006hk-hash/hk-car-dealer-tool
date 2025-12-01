@@ -1,7 +1,22 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2 } from 'lucide-react';
+
+// --- Firebase Imports (MUST BE USED) ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
 
 // --- Global Constants & FRT Calculation ---
+
+// 檢查全局變數是否存在
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+// 在 HTML/React 應用中，請務必設定日誌級別，以便在控制台中查看 Firebase 狀態
+if (process.env.NODE_ENV !== 'production') {
+  setLogLevel('debug');
+}
 
 const DEFAULT_RATES = {
   JP: 0.053, 
@@ -185,14 +200,20 @@ const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "a
 // --- Main App Component ---
 
 export default function App() {
-  // --- Application State (In-Memory Session Mode) ---
+  // --- Firebase State ---
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+
+  // --- Application State (Defaults) ---
   const [activeTab, setActiveTab] = useState('calculator'); 
   const [selectedCountry, setSelectedCountry] = useState('JP');
-  // Initialize with defaults, as there is no loading from storage
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [defaultFees, setDefaultFees] = useState(DEFAULT_FEES);
   const [carInventory, setCarInventory] = useState(DEFAULT_INVENTORY); 
-  const [history, setHistory] = useState([]); // Empty history for session mode
+  const [history, setHistory] = useState([]); 
   
   // --- Temporary Calculator State ---
   const [carPrice, setCarPrice] = useState('');
@@ -203,14 +224,6 @@ export default function App() {
     manufacturer: '', model: '', year: '', code: ''
   });
   
-  // Helper to sync calculator fees when manually edited
-  const handleOriginFeeChange = (key, val) => {
-    setCurrentOriginFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
-  };
-  const handleHKFeeChange = (key, val) => {
-    setCurrentHKFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
-  };
-
   // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
@@ -218,6 +231,95 @@ export default function App() {
   
   // --- Status Message State ---
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
+
+  // --- Firestore Path Helper ---
+  const getHistoryCollectionRef = useCallback((dbInstance, currentUserId) => {
+    if (!dbInstance || !currentUserId) return null;
+    // Private data path: /artifacts/{appId}/users/{userId}/history
+    return collection(dbInstance, `artifacts/${appId}/users/${currentUserId}/history`);
+  }, []);
+
+  // --- Firebase Initialization and Authentication ---
+  useEffect(() => {
+    if (firebaseConfig) {
+      try {
+        const app = initializeApp(firebaseConfig);
+        const firestore = getFirestore(app);
+        const authInstance = getAuth(app);
+        
+        setDb(firestore);
+        setAuth(authInstance);
+
+        // Sign in or listen for auth state
+        const unsubscribe = onAuthStateChanged(authInstance, (user) => {
+          if (user) {
+            setUserId(user.uid);
+          } else {
+            // Sign in anonymously if no token is available or user is signed out
+            signInAnonymously(authInstance).then(res => {
+              setUserId(res.user.uid);
+            }).catch(e => {
+              console.error("Anonymous sign in failed:", e);
+              setUserId('guest'); // Fallback identifier
+            });
+          }
+          setIsAuthReady(true);
+        });
+
+        if (initialAuthToken) {
+           signInWithCustomToken(authInstance, initialAuthToken).catch(e => {
+            console.warn("Custom token sign in failed, falling back to anonymous:", e);
+             // If custom token fails, onAuthStateChanged will handle the anonymous sign-in fallback.
+           });
+        }
+        
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Firebase initialization failed:", error);
+      }
+    } else {
+      setIsAuthReady(true);
+      setUserId(crypto.randomUUID()); // Use random ID for session mode if no config
+      console.warn("Running in non-persistent session mode. Refresh will clear data.");
+    }
+  }, [initialAuthToken]); // Run only once on mount
+
+  // --- Firestore History Listener (onSnapshot) ---
+  useEffect(() => {
+    if (!isAuthReady || !db || !userId) return; // Wait for Firebase and Auth
+
+    const historyRef = getHistoryCollectionRef(db, userId);
+    
+    // Order by the 'timestamp' field (if we use it) or simply load.
+    // NOTE: Avoid orderBy in the query to prevent index missing errors.
+    // Instead, sort locally later.
+    const q = query(historyRef); 
+    
+    setIsHistoryLoading(true);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedHistory = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Local sorting by date (descending) as Firestore orderBy can require indexes
+      fetchedHistory.sort((a, b) => {
+          const dateA = a.date || ''; // Ensure date exists
+          const dateB = b.date || '';
+          return dateB.localeCompare(dateA);
+      });
+      
+      setHistory(fetchedHistory);
+      setIsHistoryLoading(false);
+    }, (error) => {
+      console.error("Error fetching history:", error);
+      setIsHistoryLoading(false);
+      showStatus('無法加載歷史記錄，請檢查網路連接。', 'error');
+    });
+
+    return () => unsubscribe(); // Cleanup listener on unmount/dependency change
+  }, [isAuthReady, db, userId, getHistoryCollectionRef]);
 
 
   // When country changes, reset fees to defaults
@@ -231,20 +333,30 @@ export default function App() {
     }
   }, [selectedCountry, defaultFees]); 
 
-  // --- Data Saving Handlers (In-Memory Operations) ---
+  // --- Helper to sync calculator fees when manually edited
+  const handleOriginFeeChange = (key, val) => {
+    setCurrentOriginFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
+  };
+  const handleHKFeeChange = (key, val) => {
+    setCurrentHKFees(prev => ({ ...prev, [key]: { ...prev[key], val: val } }));
+  };
+
+  // --- Status Message State ---
   const showStatus = (message, type) => {
     setSaveStatus({ message, type });
     setTimeout(() => setSaveStatus(null), 3000);
   };
-
+  
+  // --- Data Saving Handlers (Firestore/Settings) ---
   const saveSettings = () => {
-    // In session mode, this only confirms the successful update of the in-memory state
-    showStatus('設定已成功儲存到本次會話記憶體！(刷新將遺失)', 'success');
+    // NOTE: In this context, settings are only stored in memory for simplicity,
+    // but a real application would also save these to Firestore (e.g., in a settings doc)
+    showStatus('設定已成功儲存到記憶體！', 'success');
   };
 
   const resetSettings = () => {
     // Custom modal instead of window.confirm
-    const confirmed = window.confirm('確定要重置所有設定回預設值嗎？重置後重新整理將遺失所有資料。');
+    const confirmed = window.confirm('確定要重置所有設定回預設值嗎？');
     if(confirmed) {
       setRates(DEFAULT_RATES);
       setDefaultFees(DEFAULT_FEES);
@@ -284,7 +396,10 @@ export default function App() {
   };
 
 
-  const saveToHistory = () => {
+  const saveToHistory = async () => {
+    if (!db || !userId) {
+        return showStatus('數據庫尚未連接，請稍候...', 'error');
+    }
     
     // --- Pre-check: Ensure critical fields are non-zero ---
     const carPriceVal = parseFloat(carPrice) || 0;
@@ -298,18 +413,19 @@ export default function App() {
       return showStatus('總成本計算結果為零或無效', 'error');
     }
 
-    const newRecordId = Date.now().toString(); 
-    
-    // Fixed: Use simple toLocaleString without 'timeZone' or complex options to avoid potential environment errors
+    // Format date manually as 'YYYY/MM/DD HH:MM:SS'
+    const now = new Date();
+    const formattedDate = now.toLocaleString('zh-HK', { 
+        day: '2-digit', month: '2-digit', year: 'numeric', 
+        hour: '2-digit', minute: '2-digit', second: '2-digit', 
+        hour12: false // Use 24-hour format
+    });
+
     const newRecordContent = {
-      id: newRecordId,
-      // Format date manually as 'YYYY/MM/DD HH:MM:SS'
-      date: new Date().toLocaleString('zh-HK', { 
-          day: '2-digit', month: '2-digit', year: 'numeric', 
-          hour: '2-digit', minute: '2-digit', second: '2-digit', 
-          hour12: false // Use 24-hour format
-      }), 
+      date: formattedDate,
+      timestamp: now.toISOString(), // Use ISO string for consistent sorting in Firestore (if needed)
       countryId: selectedCountry,
+      isLocked: false, // New field for the locking feature
       
       inputValues: {
           rate: currentRate,
@@ -335,30 +451,55 @@ export default function App() {
     };
 
     try {
-        const updatedHistory = [newRecordContent, ...history];
-        updatedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
-        setHistory(updatedHistory);
-        showStatus('記錄成功儲存到本次會話記憶體！(刷新將遺失)', 'success');
+        const historyRef = getHistoryCollectionRef(db, userId);
+        await addDoc(historyRef, newRecordContent);
+        showStatus('記錄已成功儲存到雲端資料庫！', 'success');
         
         // Go to history tab after a small delay 
         setTimeout(() => setActiveTab('history'), 800);
         
     } catch (e) {
         console.error("Failed to add history record:", e);
-        showStatus('儲存記錄失敗。', 'error');
+        showStatus('儲存記錄失敗，請檢查權限。', 'error');
     }
   };
 
-  const deleteHistoryItem = (id) => {
-    const confirmed = window.confirm('確定要刪除這條記錄嗎？');
+  const deleteHistoryItem = async (id, isLocked) => {
+    if (isLocked) {
+        return showStatus('此記錄已被鎖定，請先解鎖才能刪除。', 'error');
+    }
+    if (!db || !userId) return;
+
+    const confirmed = window.confirm('確定要刪除這條記錄嗎？刪除後無法復原。');
     if (confirmed) {
-      const updatedHistory = history.filter(item => item.id !== id);
-      setHistory(updatedHistory);
-      showStatus('記錄已從會話記憶體中刪除!', 'success');
+      try {
+        const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
+        await deleteDoc(historyDocRef);
+        showStatus('記錄已成功刪除！', 'success');
+      } catch (e) {
+        console.error("Failed to delete history record:", e);
+        showStatus('刪除記錄失敗，請重試。', 'error');
+      }
     }
   };
   
-  // --- Inventory Handlers (In-Memory) ---
+  const toggleLockHistoryItem = async (id, currentLockState) => {
+      if (!db || !userId) return;
+
+      try {
+        const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
+        await updateDoc(historyDocRef, {
+            isLocked: !currentLockState
+        });
+        showStatus(currentLockState ? '記錄已解鎖。' : '記錄已鎖定。', 'success');
+      } catch (e) {
+        console.error("Failed to toggle lock status:", e);
+        showStatus('更新鎖定狀態失敗。', 'error');
+      }
+  };
+
+
+  // --- Inventory Handlers (In-Memory for this app version) ---
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
@@ -489,9 +630,10 @@ export default function App() {
             <Truck className="w-6 h-6 text-gray-300" />
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
-            <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full" title="數據僅儲存在本次會話記憶體中，刷新將遺失。">
-              會話模式 (非持久化)
+            <span className="text-xs bg-green-600 px-2 py-0.5 rounded-full" title="數據已儲存在雲端，重新整理不會遺失。">
+              Firestore 模式 (持久化)
             </span>
+            {userId && <span className="text-xs text-gray-400 ml-2 truncate hidden sm:block">用戶ID: {userId}</span>}
           </div>
           <div className="flex gap-1 bg-gray-800 p-1 rounded-lg">
             <button 
@@ -504,11 +646,12 @@ export default function App() {
             </button>
             <button 
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-200 hover:text-white'}`}
+              className={`relative flex items-center gap-1 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${activeTab === 'history' ? 'bg-blue-500 text-white shadow-sm' : 'text-gray-200 hover:text-white'}`}
             >
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">記錄</span>
               <span className="sm:hidden">記錄 ({history.length})</span>
+               {isHistoryLoading && <Loader2 className="w-4 h-4 animate-spin absolute right-0 top-0 m-0.5 text-yellow-400" />}
             </button>
             <button 
               onClick={() => setActiveTab('settings')}
@@ -686,11 +829,11 @@ export default function App() {
                 
                 <button 
                   onClick={saveToHistory}
-                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0} 
+                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0 || !db} 
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
-                  <span>記錄預算 (僅本次會話)</span>
+                  <span>記錄預算 (持久儲存)</span>
                 </button>
               </div>
 
@@ -715,16 +858,22 @@ export default function App() {
              <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <List className="w-6 h-6 text-blue-600" />
-                會話記憶體記錄
+                歷史記錄 (Firestore)
               </h2>
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
 
-            {history.length === 0 ? (
+            {isHistoryLoading ? (
+               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 flex flex-col items-center">
+                 <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-4 animate-spin" />
+                 <p className="text-gray-400">正在加載歷史記錄...</p>
+                 <p className='text-xs text-gray-300 mt-2'>用戶ID: {userId}</p>
+              </div>
+            ) : history.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
-                <p className='text-xs text-gray-300 mt-2 font-bold text-red-500'>**注意: 數據僅儲存在本次會話記憶體中，重新整理將遺失。**</p>
+                <p className='text-xs text-gray-500 mt-2 font-bold'>**注意: 數據已儲存到雲端，不會遺失。**</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -739,12 +888,23 @@ export default function App() {
                            <Calendar className="w-3 h-3" /> {item.date}
                          </span>
                       </div>
-                      <button 
-                        onClick={() => deleteHistoryItem(item.id)}
-                        className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className='flex gap-2 items-center'>
+                          <button
+                            onClick={() => toggleLockHistoryItem(item.id, item.isLocked)}
+                            className={`p-1 rounded transition-colors ${item.isLocked ? 'text-red-600 hover:bg-red-100' : 'text-gray-400 hover:text-green-600 hover:bg-green-100'}`}
+                            title={item.isLocked ? '已鎖定，點擊解鎖' : '點擊鎖定記錄'}
+                          >
+                            {item.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                          </button>
+                          <button 
+                            onClick={() => deleteHistoryItem(item.id, item.isLocked)}
+                            disabled={item.isLocked}
+                            className={`p-1 rounded transition-colors ${item.isLocked ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
+                            title={item.isLocked ? '請先解鎖才能刪除' : '刪除記錄'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -935,7 +1095,7 @@ export default function App() {
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-red-50 p-2 rounded border border-red-100">
                 <Info className="w-4 h-4 mt-0.5 text-red-600" />
-                <p className='text-red-700 font-bold'>匯率數據僅儲存在本次會話記憶體中。更改後請記得按 **確認設定**。</p>
+                <p className='text-red-700 font-bold'>匯率數據僅儲存在記憶體中。更改後請記得按 **確認設定**。</p>
               </div>
             </Card>
 
