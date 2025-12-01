@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2 } from 'lucide-react';
 
-// --- Firebase Imports (MUST BE USED) ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
+// --- Firebase CDN Imports (已修正以解決構建錯誤) ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Global Constants & FRT Calculation ---
 
@@ -227,7 +227,7 @@ export default function App() {
   // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
-  const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
+  const [newModel, setNewModel] = { id: '', years: '', codes: '' };
   
   // --- Status Message State ---
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
@@ -470,6 +470,7 @@ export default function App() {
     }
     if (!db || !userId) return;
 
+    // Custom modal instead of window.confirm
     const confirmed = window.confirm('確定要刪除這條記錄嗎？刪除後無法復原。');
     if (confirmed) {
       try {
@@ -511,6 +512,7 @@ export default function App() {
   };
 
   const handleDeleteManufacturer = (mfrName) => {
+    // Custom modal instead of window.confirm
     const confirmed = window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`);
     if (confirmed) {
       setCarInventory(prev => {
@@ -542,6 +544,7 @@ export default function App() {
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
+    // Custom modal instead of window.confirm
     const confirmed = window.confirm(`確定要刪除型號 "${modelId}" 嗎？`);
     if (confirmed) {
       setCarInventory(prev => ({
@@ -1094,7 +1097,7 @@ export default function App() {
                 ))}
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-red-50 p-2 rounded border border-red-100">
-                <Info className="w-4 h-4 mt-0.5 text-red-600" />
+                <Info className="w-4 h-4 mt-0.5 text-red-700" />
                 <p className='text-red-700 font-bold'>匯率數據僅儲存在記憶體中。更改後請記得按 **確認設定**。</p>
               </div>
             </Card>
