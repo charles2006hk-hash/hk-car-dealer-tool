@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft } from 'lucide-react';
 
-// --- Firebase CDN Imports (使用 CDN URL 解決 Rollup/Vite 模組解析錯誤) ---
+// --- Firebase CDN Imports (使用 CDN URL 確保單一檔案環境兼容性) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 // 引入 inMemoryPersistence 和 setPersistence 來解決 iFrame/沙盒環境的存儲訪問錯誤
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -11,7 +11,6 @@ import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, de
 // --- Global Constants & FRT Calculation ---
 
 // 1. 🚨 檢查全局變數是否存在，並從 Canvas 注入的配置中獲取 Firebase 設置 🚨
-// 確保 JSON.parse 處理空字串或未定義值
 const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : null;
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
@@ -85,7 +84,6 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   }, [value]);
 
   const filteredOptions = useMemo(() => {
-    // 確保 options 是有效的陣列
     const validOptions = Array.isArray(options) ? options : [];
     if (!searchTerm) return validOptions;
     const lowerSearch = searchTerm.toLowerCase();
@@ -123,7 +121,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           disabled={disabled}
-          onBlur={() => setTimeout(() => setIsOpen(false), 100)} // Delay blur to allow selection click
+          onBlur={() => setTimeout(() => setIsOpen(false), 100)} 
         />
         
         {searchTerm && (
@@ -148,7 +146,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
             <li
               key={index}
               className="px-3 py-2 text-sm text-gray-700 cursor-pointer hover:bg-blue-50 hover:text-blue-600"
-              onMouseDown={(e) => { e.preventDefault(); handleSelect(option); }} // Use onMouseDown to prevent blur/loss of focus issue
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(option); }} 
             >
               {option}
             </li>
@@ -233,7 +231,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
   // --- Custom Confirmation Modal State ---
-  const [modalConfig, setModalConfig] = useState(null); // { title: string, message: string, onConfirm: function, type: 'warning' | 'danger' }
+  const [modalConfig, setModalConfig] = useState(null); 
   
   // --- Firebase connection status ---
   const isFirebaseConfigured = useMemo(() => !!firebaseConfig && !!firebaseConfig.projectId, []);
@@ -245,22 +243,23 @@ export default function App() {
     if (!dbInstance || !currentUserId) return null;
     // Private data path: /artifacts/{appId}/users/{userId}/history
     return collection(dbInstance, `artifacts/${appId}/users/${currentUserId}/history`);
-  }, []); // appId is already defined globally
+  }, []); 
 
 
-  // --- Firebase Initialization and Authentication (Refactored for strict sequencing) ---
+  // --- Firebase Initialization and Authentication (CRITICAL FIXES HERE) ---
   useEffect(() => {
+    let unsubscribeAuth = () => {};
+
     if (!isFirebaseConfigured) {
         setIsAuthReady(true);
         setUserId('session-' + crypto.randomUUID()); 
         console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
         showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
-        return;
+        return () => {}; // Nothing to clean up if no Firebase setup happened
     }
     
     // Helper function to handle async initialization
     const initFirebase = async () => {
-      let unsubscribeAuth = () => {};
       setLogLevel('Debug'); // Enable debug logging for Firebase
 
       try {
@@ -269,55 +268,53 @@ export default function App() {
         const firestore = getFirestore(app);
         const authInstance = getAuth(app);
         
-        // 🚨 CRITICAL FIX: Set persistence FIRST and wait for it to ensure it takes effect 
-        // before any sign-in attempt (including listener startup) tries to access storage.
-        await setPersistence(authInstance, inMemoryPersistence);
+        // 🚨 CRITICAL FIX: Set persistence FIRST and wait for it.
+        // This MUST happen before any sign-in attempt, even the internal ones triggered by getAuth.
+        await setPersistence(authInstance, inMemoryPersistence); 
         console.log("Firebase Auth Persistence set to in-memory.");
 
-        // 2. Auth attempt using custom token if available, or anonymous sign-in
-        if (initialAuthToken) {
-           await signInWithCustomToken(authInstance, initialAuthToken);
-           console.log("Firebase Auth: Signed in with custom token.");
-        } else {
-           // Fallback to anonymous sign-in if no custom token provided
-           const userCredential = await signInAnonymously(authInstance);
-           console.log("Firebase Auth: Signed in anonymously as", userCredential.user.uid);
-        }
-        
-        // 3. Set up the Auth State Listener
+        // 2. Set up the Auth State Listener FIRST
         unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
             if (user) {
                 setUserId(user.uid);
             } else {
-                setUserId('guest-' + crypto.randomUUID()); // Should not happen often if sign-in succeeds
+                setUserId('guest-' + crypto.randomUUID()); 
             }
             setIsAuthReady(true); // Mark ready once the initial check is done
         });
-
+        
+        // 3. Attempt sign-in to trigger the listener (Listener will handle state updates)
+        if (initialAuthToken) {
+           await signInWithCustomToken(authInstance, initialAuthToken);
+           console.log("Firebase Auth: Signed in with custom token.");
+        } else {
+           await signInAnonymously(authInstance);
+           console.log("Firebase Auth: Signed in anonymously.");
+        }
+        
         // 4. Set state for use in other effects
         setDb(firestore);
         setAuth(authInstance);
 
+
       } catch (error) {
         console.error("Firebase initialization or sign-in failed:", error);
-        showStatus('Firebase 初始化失敗或登入錯誤，請檢查配置。', 'error');
-        // Fallback to error state
+        // Show the user the specific error (e.g. storage access)
+        showStatus(`Firebase 初始化失敗或登入錯誤: ${error.message}`, 'error');
         setIsAuthReady(true); 
         setUserId('init-error-' + crypto.randomUUID()); 
       }
-      
-      return unsubscribeAuth; // Return the cleanup function
     };
 
-    // Run the async initialization and capture the cleanup function
-    const cleanupPromise = initFirebase();
+    // Run the async initialization
+    initFirebase();
+    
+    // Return the cleanup function for the listener
     return () => {
-      cleanupPromise.then(unsubscribe => {
-        if (typeof unsubscribe === 'function') unsubscribe();
-      });
+      unsubscribeAuth();
     };
     
-  }, [initialAuthToken, isFirebaseConfigured]); // Rerun if config status changes (though static) or token changes
+  }, [initialAuthToken, isFirebaseConfigured]); 
 
   // --- Firestore History Listener (onSnapshot) ---
   useEffect(() => {
@@ -326,7 +323,6 @@ export default function App() {
 
     const historyRef = getHistoryCollectionRef(db, userId);
     
-    // NOTE: Avoid orderBy in the query to prevent index missing errors.
     const q = query(historyRef); 
     
     setIsHistoryLoading(true);
@@ -341,7 +337,7 @@ export default function App() {
       fetchedHistory.sort((a, b) => {
           const dateA = a.timestamp || ''; 
           const dateB = b.timestamp || '';
-          return dateB.localeCompare(dateA); // Sort by ISO timestamp
+          return dateB.localeCompare(dateA); 
       });
       
       setHistory(fetchedHistory);
@@ -353,7 +349,7 @@ export default function App() {
       showStatus('無法加載歷史記錄，請檢查網路連接或 Firestore 安全規則。', 'error');
     });
 
-    return () => unsubscribe(); // Cleanup listener on unmount/dependency change
+    return () => unsubscribe(); 
   }, [isFirebaseConnected, db, userId, getHistoryCollectionRef]);
 
 
@@ -791,6 +787,22 @@ export default function App() {
           </div>
         </div>
       </div>
+      
+      {/* Configuration Missing Warning */}
+      {!isFirebaseConfigured && (
+          <div className="max-w-3xl mx-auto p-4">
+              <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow-sm" role="alert">
+                  <div className="flex">
+                      <AlertTriangle className="w-5 h-5 mt-0.5 mr-3" />
+                      <div>
+                          <p className="font-bold">連線警告：Firebase 配置缺失</p>
+                          <p className="text-sm">應用程式正在 **會話模式** 運行，所有估價記錄在重新整理後將會丟失。</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
 
       <div className="max-w-3xl mx-auto p-4">
         
@@ -1002,7 +1014,7 @@ export default function App() {
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
-                <p className='text-xs text-gray-500 mt-2 font-bold'>**注意: 數據已儲存到雲端，不會遺失。**</p>
+                {isFirebaseConnected && <p className='text-xs text-gray-500 mt-2 font-bold'>**注意: 數據已儲存到雲端，不會遺失。**</p>}
               </div>
             ) : (
               <div className="space-y-4">
