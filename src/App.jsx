@@ -17,16 +17,16 @@ const COUNTRIES = {
 
 const DEFAULT_FEES = {
   JP: {
-    origin: { auctionFee: { label: '拍賣場/FOB費用', val: 20000 }, shipping: { label: '船運費', val: 100000 } },
-    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 5500 }, parts: { label: '更換配件/維修', val: 3000 }, insurance: { label: '保險費', val: 1500 }, license: { label: '牌費', val: 5800 } }
+    origin: { auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, shipping: { label: '船運費', val: '100000' } },
+    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '5500' }, parts: { label: '更換配件/維修', val: '3000' }, insurance: { label: '保險費', val: '1500' }, license: { label: '牌費', val: '5800' } }
   },
   UK: {
-    origin: { auctionFee: { label: '出口手續費', val: 500 }, shipping: { label: '船運費', val: 1500 } },
-    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 6500 }, parts: { label: '更換配件/維修', val: 4000 }, insurance: { label: '保險費', val: 2000 }, license: { label: '牌費', val: 5800 } }
+    origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '船運費', val: '1500' } },
+    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } }
   },
   DE: {
-    origin: { auctionFee: { label: '出口手續費', val: 400 }, shipping: { label: '船運費', val: 1200 } },
-    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 6500 }, parts: { label: '更換配件/維修', val: 4000 }, insurance: { label: '保險費', val: 2000 }, license: { label: '牌費', val: 5800 } }
+    origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '船運費', val: '1200' } },
+    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } }
   }
 };
 
@@ -108,6 +108,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           disabled={disabled}
+          onBlur={() => setTimeout(() => setIsOpen(false), 100)} // Delay blur to allow selection click
         />
         
         {searchTerm && (
@@ -146,8 +147,8 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   );
 };
 
-const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "", required = false }) => {
-  const isInvalid = required && (value === '' || parseFloat(value) <= 0 || isNaN(parseFloat(value)));
+const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "any", placeholder = "", required = false, min = 0 }) => {
+  const isInvalid = required && (value === '' || parseFloat(value) <= min || isNaN(parseFloat(value)));
   
   return (
     <div className="mb-3">
@@ -222,13 +223,13 @@ export default function App() {
   // When country changes, reset fees to defaults
   useEffect(() => {
     if (defaultFees[selectedCountry]) {
-      // Re-initialize current calculation fees based on the defaultFees structure
+      // Deep clone the default fees structure to ensure the calculator fees are independent copies
       setCurrentOriginFees(JSON.parse(JSON.stringify(defaultFees[selectedCountry].origin)));
       setCurrentHKFees(JSON.parse(JSON.stringify(defaultFees[selectedCountry].hk)));
       setCarPrice('');
       setApprovedRetailPrice('');
     }
-  }, [selectedCountry, defaultFees]); // Runs on initial mount and when country/defaultFees change
+  }, [selectedCountry, defaultFees]); 
 
   // --- Data Saving Handlers (In-Memory Operations) ---
   const showStatus = (message, type) => {
@@ -242,11 +243,17 @@ export default function App() {
   };
 
   const resetSettings = () => {
-    if(window.confirm('確定要重置所有設定回預設值嗎？重置後重新整理將遺失所有資料。')) {
+    // Custom modal instead of window.confirm
+    const confirmed = window.confirm('確定要重置所有設定回預設值嗎？重置後重新整理將遺失所有資料。');
+    if(confirmed) {
       setRates(DEFAULT_RATES);
       setDefaultFees(DEFAULT_FEES);
       setCarInventory(DEFAULT_INVENTORY);
       showStatus('所有設定已重置回預設值。', 'success');
+      // Reset current calculator view to reflect new defaults
+      setSelectedCountry('JP');
+      setCurrentOriginFees(DEFAULT_FEES['JP'].origin);
+      setCurrentHKFees(DEFAULT_FEES['JP'].hk);
     }
   };
   
@@ -291,15 +298,16 @@ export default function App() {
       return showStatus('總成本計算結果為零或無效', 'error');
     }
 
-    const newRecordId = Date.now().toString(); // Use timestamp as ID
+    const newRecordId = Date.now().toString(); 
     
-    // Fix: Remove timeZone option to prevent RangeError
+    // Fixed: Use simple toLocaleString without 'timeZone' or complex options to avoid potential environment errors
     const newRecordContent = {
       id: newRecordId,
+      // Format date manually as 'YYYY/MM/DD HH:MM:SS'
       date: new Date().toLocaleString('zh-HK', { 
           day: '2-digit', month: '2-digit', year: 'numeric', 
           hour: '2-digit', minute: '2-digit', second: '2-digit', 
-          hour12: false // Use 24-hour format for clarity
+          hour12: false // Use 24-hour format
       }), 
       countryId: selectedCountry,
       
@@ -336,14 +344,14 @@ export default function App() {
         setTimeout(() => setActiveTab('history'), 800);
         
     } catch (e) {
-        // Should not happen as we are not using storage, but good practice
         console.error("Failed to add history record:", e);
         showStatus('儲存記錄失敗。', 'error');
     }
   };
 
   const deleteHistoryItem = (id) => {
-    if (window.confirm('確定要刪除這條記錄嗎？')) {
+    const confirmed = window.confirm('確定要刪除這條記錄嗎？');
+    if (confirmed) {
       const updatedHistory = history.filter(item => item.id !== id);
       setHistory(updatedHistory);
       showStatus('記錄已從會話記憶體中刪除!', 'success');
@@ -362,7 +370,8 @@ export default function App() {
   };
 
   const handleDeleteManufacturer = (mfrName) => {
-    if (window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`)) {
+    const confirmed = window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`);
+    if (confirmed) {
       setCarInventory(prev => {
         const { [mfrName]: _, ...rest } = prev;
         return rest;
@@ -392,7 +401,8 @@ export default function App() {
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
-    if (window.confirm(`確定要刪除型號 "${modelId}" 嗎？`)) {
+    const confirmed = window.confirm(`確定要刪除型號 "${modelId}" 嗎？`);
+    if (confirmed) {
       setCarInventory(prev => ({
         ...prev,
         [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
@@ -404,21 +414,24 @@ export default function App() {
 
   // --- Calculations & Memoizations (Unchanged) ---
   const currentCurrency = COUNTRIES[selectedCountry];
+  // Ensure rate is always treated as a number
   const currentRate = parseFloat(rates[selectedCountry]) || 0; 
 
+  // Ensure prices are treated as numbers, fallback to 0 if invalid
   const carPriceVal = parseFloat(carPrice) || 0;
   const carPriceHKD = carPriceVal * currentRate;
 
   let totalOriginFeesNative = 0;
-  // Ensure values are strings or numbers before parsing
+  // Sum native origin fees, ensuring each fee value is treated as a number
   Object.values(currentOriginFees).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
+  // Ensure PRP is treated as a number
   const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
   const calculatedFRT = calculateFRT(approvedRetailPriceVal);
 
   let totalHKFeesWithoutFRT = 0;
-  // Ensure values are strings or numbers before parsing
+  // Sum local HK fees, ensuring each fee value is treated as a number
   Object.values(currentHKFees).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
 
   const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
@@ -426,12 +439,14 @@ export default function App() {
 
   const fmtMoney = (amount, currency = 'HKD') => {
     if (isNaN(amount) || amount === null) return 'N/A';
-    return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
+    // Use 'en-US' locale for consistent grouping and 'HKD' for symbol/currency
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
   };
   
   const handleCarDetailChange = (field, value) => {
     setCarDetails(prev => {
       const newDetails = { ...prev, [field]: value };
+      // Cascading reset for dependent fields
       if (field === 'manufacturer' && prev.manufacturer !== value) {
         newDetails.model = ''; newDetails.year = ''; newDetails.code = '';
       } else if (field === 'model' && prev.model !== value) {
@@ -575,16 +590,17 @@ export default function App() {
                   value={carPrice}
                   onChange={setCarPrice}
                   placeholder="例如: 1500000"
-                  required={true} // Marked as required
+                  required={true} 
+                  min={0}
                 />
-                {/* 新增 PRP 輸入 */}
                 <InputGroup 
                   label="核准公布零售價 (PRP) - 首次登記稅基 (HKD)"
                   prefix="$"
                   value={approvedRetailPrice}
                   onChange={setApprovedRetailPrice}
                   placeholder="例如: 350000"
-                  required={true} // Marked as required
+                  required={true} 
+                  min={0}
                 />
               </div>
               <div className="bg-gray-100 p-3 rounded-lg text-right mt-4">
@@ -605,6 +621,7 @@ export default function App() {
                       prefix={currentCurrency.symbol}
                       value={item.val}
                       onChange={(val) => handleOriginFeeChange(key, val)}
+                      min={0}
                     />
                   ))}
                   <div className="pt-2 border-t mt-2 flex justify-between items-center text-sm">
@@ -626,6 +643,7 @@ export default function App() {
                       prefix="$"
                       value={item.val}
                       onChange={(val) => handleHKFeeChange(key, val)}
+                      min={0}
                     />
                   ))}
                   
@@ -911,6 +929,7 @@ export default function App() {
                     value={rates[c.id]}
                     onChange={(val) => handleRateChange(c.id, val)}
                     step="0.001"
+                    min={0}
                   />
                 ))}
               </div>
@@ -949,6 +968,7 @@ export default function App() {
                               label=""
                               value={item.val}
                               onChange={(val) => handleDefaultFeeChange(c.id, 'origin', key, val)}
+                              min={0}
                             />
                           </div>
                         </div>
@@ -968,6 +988,7 @@ export default function App() {
                               label=""
                               value={item.val}
                               onChange={(val) => handleDefaultFeeChange(c.id, 'hk', key, val)}
+                              min={0}
                             />
                           </div>
                         </div>
