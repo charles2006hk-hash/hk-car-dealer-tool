@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle } from 'lucide-react';
 
-// --- Firebase Imports (已修復: 確保所有Auth相關函數, 包含 setPersistence & inMemoryPersistence) ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, collection, query, onSnapshot, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+// --- Local Storage Keys ---
+const LS_SETTINGS_KEY = 'carDealerSettings';
+const LS_HISTORY_KEY = 'carDealerHistory';
 
 // --- Global Constants & FRT Calculation ---
 
-// NOTE: These constants serve as initial defaults only. Actual state is loaded from Firestore.
 const DEFAULT_RATES = {
   JP: 0.053, 
   UK: 10.2, 
@@ -56,7 +53,7 @@ const calculateFRT = (prp) => {
     return frt;
 };
 
-// --- Helper Components ---
+// --- Helper Components (Same as before) ---
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
     {children}
@@ -191,16 +188,7 @@ const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1
 // --- Main App Component ---
 
 export default function App() {
-  // --- Firebase State ---
-  const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFirebaseConfigAvailable, setIsFirebaseConfigAvailable] = useState(true); // New state for config check
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-
-  // --- Application State (Synced with Firestore) ---
+  // --- Application State (Synced with LocalStorage) ---
   const [activeTab, setActiveTab] = useState('calculator'); 
   const [selectedCountry, setSelectedCountry] = useState('JP');
   const [rates, setRates] = useState(DEFAULT_RATES);
@@ -234,143 +222,34 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
 
-  // --- 1. Firebase Initialization and Authentication ---
+  // --- 1. Data Loading from LocalStorage ---
   useEffect(() => {
-    let firebaseConfig = null;
-    let configAvailable = false;
-
-    try {
-        // 1. 安全地檢查和解析全局配置
-        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            firebaseConfig = JSON.parse(__firebase_config);
-            if (Object.keys(firebaseConfig).length > 0) {
-                configAvailable = true;
-            }
-        }
-    } catch (e) {
-        console.error("Failed to parse __firebase_config JSON:", e);
+    // Load Settings
+    const storedSettings = localStorage.getItem(LS_SETTINGS_KEY);
+    if (storedSettings) {
+      try {
+        const parsedSettings = JSON.parse(storedSettings);
+        setRates(parsedSettings.rates || DEFAULT_RATES);
+        setDefaultFees(parsedSettings.defaultFees || DEFAULT_FEES);
+        setCarInventory(parsedSettings.carInventory || DEFAULT_INVENTORY);
+      } catch (e) {
+        console.error("Failed to load settings from localStorage:", e);
+      }
     }
     
-    // 2. 處理配置缺失的情況
-    if (!configAvailable || !firebaseConfig) {
-        console.error("Firebase config is missing or invalid. Cannot initialize Firebase services.");
-        setIsFirebaseConfigAvailable(false);
-        setIsLoading(false);
-        setIsAuthReady(false);
-        return;
+    // Load History
+    const storedHistory = localStorage.getItem(LS_HISTORY_KEY);
+    if (storedHistory) {
+      try {
+        const parsedHistory = JSON.parse(storedHistory);
+        // Ensure history is sorted by date/time (ID is timestamp)
+        parsedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
+        setHistory(parsedHistory);
+      } catch (e) {
+        console.error("Failed to load history from localStorage:", e);
+      }
     }
-
-    setIsFirebaseConfigAvailable(true); // Configuration is present
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const firestore = getFirestore(app);
-    setDb(firestore);
-
-    // 3. 初始化 Auth 並設定 In-Memory 持久化 (解決 'Access to storage' 錯誤)
-    const initializeAuth = async () => {
-        try {
-            // 必須在登入前設定持久化
-            await setPersistence(auth, inMemoryPersistence);
-
-            const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    // 嘗試使用自定義 Token 或匿名登入
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined') {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            // 降級為匿名登入
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Firebase sign-in failed (fallback to anonymous):", error);
-                        // 即使 custom token 失敗，仍嘗試匿名登入
-                        await signInAnonymously(auth);
-                    }
-                }
-                setIsAuthReady(true);
-            });
-            return () => unsubscribe();
-        } catch (error) {
-            console.error("Auth Persistence Setup Failed:", error);
-            // 如果持久化設置失敗，我們仍然可以嘗試繼續，但可能會遇到錯誤
-            setIsAuthReady(true); 
-        }
-        setIsLoading(false);
-    };
-
-    const cleanup = initializeAuth();
-    return () => cleanup && cleanup();
-    
-  }, []);
-
-  // --- Firestore Reference Helpers ---
-  // Private Data Path: /artifacts/{appId}/users/{userId}/...
-  const getSettingsDocRef = useCallback(() => {
-      if (!db || !userId) return null;
-      return doc(db, `artifacts/${appId}/users/${userId}/settings/dealerSettings`);
-  }, [db, userId, appId]);
-
-  const getHistoryCollectionRef = useCallback(() => {
-      if (!db || !userId) return null;
-      return collection(db, `artifacts/${appId}/users/${userId}/history`);
-  }, [db, userId, appId]);
-
-  // --- 2. Data Synchronization (Load and Listen) ---
-  useEffect(() => {
-      if (!isAuthReady || !db || !userId || !isFirebaseConfigAvailable) return;
-
-      let unsubscribeSettings = () => {};
-      let unsubscribeHistory = () => {};
-
-      const settingsRef = getSettingsDocRef();
-      const historyCollectionRef = getHistoryCollectionRef();
-      
-      if (!settingsRef || !historyCollectionRef) return;
-
-      // 1. Settings Listener (Rates, Fees, Inventory)
-      unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-          if (docSnap.exists()) {
-              const data = docSnap.data();
-              setRates(data.rates || DEFAULT_RATES);
-              setDefaultFees(data.defaultFees || DEFAULT_FEES);
-              setCarInventory(data.carInventory || DEFAULT_INVENTORY);
-          } else {
-              // If settings doc doesn't exist, create it with defaults
-              setDoc(settingsRef, {
-                  rates: DEFAULT_RATES,
-                  defaultFees: DEFAULT_FEES,
-                  carInventory: DEFAULT_INVENTORY
-              }, { merge: true }).catch(e => console.error("Error creating default settings:", e));
-          }
-          setIsLoading(false); // Data loaded, stop loading
-      }, (error) => {
-          console.error("Settings snapshot error:", error);
-          setIsLoading(false);
-      });
-
-      // 2. History Listener
-      // We query the collection and sort locally since we cannot enforce indexes here.
-      const historyQuery = query(historyCollectionRef);
-      unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
-          const loadedHistory = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-          }));
-          // Sort locally by ID (which is the timestamp of creation) descending (newest first)
-          loadedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
-          setHistory(loadedHistory);
-      }, (error) => console.error("History snapshot error:", error));
-
-      return () => {
-          unsubscribeSettings();
-          unsubscribeHistory();
-      };
-  }, [isAuthReady, db, userId, getSettingsDocRef, getHistoryCollectionRef, isFirebaseConfigAvailable]);
-
+  }, []); // Only runs on initial mount
 
   // When country changes, reset fees to defaults
   useEffect(() => {
@@ -382,40 +261,34 @@ export default function App() {
     }
   }, [selectedCountry, defaultFees]);
 
-  // --- 3. Data Saving Handlers (Firestore Operations) ---
+  // --- 2. Data Saving Handlers (LocalStorage Operations) ---
   const showStatus = (message, type) => {
     setSaveStatus({ message, type });
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
-  const saveSettings = async () => {
-    const settingsRef = getSettingsDocRef();
-    if (!settingsRef) return showStatus('Firestore 未初始化，無法儲存', 'error');
-
+  const saveSettings = () => {
     try {
-        await setDoc(settingsRef, { 
+        const settingsToSave = { 
             rates, 
             defaultFees, 
             carInventory 
-        }, { merge: true });
-        showStatus('設定已成功儲存到雲端！', 'success');
+        };
+        localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(settingsToSave));
+        showStatus('設定已成功儲存到本地！', 'success');
     } catch (e) {
-        console.error("Failed to save settings to Firestore:", e);
-        showStatus('儲存設定失敗，請檢查網路連接。', 'error');
+        console.error("Failed to save settings to LocalStorage:", e);
+        showStatus('儲存設定失敗，本地儲存空間不足。', 'error');
     }
   };
 
-  const resetSettings = async () => {
+  const resetSettings = () => {
     if(window.confirm('確定要重置所有設定回預設值嗎？')) {
-      const settingsRef = getSettingsDocRef();
-      if (!settingsRef) return showStatus('Firestore 未初始化，無法重置', 'error');
-
       try {
-        await setDoc(settingsRef, {
-            rates: DEFAULT_RATES,
-            defaultFees: DEFAULT_FEES,
-            carInventory: DEFAULT_INVENTORY
-        });
+        localStorage.removeItem(LS_SETTINGS_KEY);
+        setRates(DEFAULT_RATES);
+        setDefaultFees(DEFAULT_FEES);
+        setCarInventory(DEFAULT_INVENTORY);
         showStatus('所有設定已重置回預設值。', 'success');
       } catch (e) {
           console.error("Failed to reset settings:", e);
@@ -424,7 +297,7 @@ export default function App() {
     }
   };
   
-  // Update Fee structure in state, preparing for Firestore sync
+  // Update Fee structure in state, preparing for saving
   const handleDefaultFeeChange = (countryId, type, key, val) => {
     setDefaultFees(prev => {
       const newFees = {
@@ -451,7 +324,7 @@ export default function App() {
   };
 
 
-  const saveToHistory = async () => {
+  const saveToHistory = () => {
     
     // --- Pre-check: Ensure critical fields are non-zero ---
     const carPriceVal = parseFloat(carPrice) || 0;
@@ -465,11 +338,11 @@ export default function App() {
       return showStatus('總成本計算結果為零或無效', 'error');
     }
 
-    const historyCollectionRef = getHistoryCollectionRef();
-    if (!historyCollectionRef) return showStatus('Firestore 未初始化，無法儲存記錄', 'error');
-
+    const newRecordId = Date.now().toString(); // Use timestamp as ID
+    
     // 將所有計算時使用的數值和結構全部存入記錄中
     const newRecordContent = {
+      id: newRecordId,
       date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong-Kong' }), 
       countryId: selectedCountry,
       
@@ -496,25 +369,27 @@ export default function App() {
     };
 
     try {
-        // 使用 addDoc，Firestore 會自動生成 ID
-        await addDoc(historyCollectionRef, newRecordContent);
-        showStatus('記錄成功儲存到雲端！', 'success');
+        const updatedHistory = [newRecordContent, ...history];
+        localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(updatedHistory));
+        setHistory(updatedHistory);
+        showStatus('記錄成功儲存到本地！', 'success');
         
         // Go to history tab after a small delay 
         setTimeout(() => setActiveTab('history'), 800);
         
     } catch (e) {
         console.error("Failed to add history record:", e);
-        showStatus('儲存記錄失敗，請檢查網路連接。', 'error');
+        showStatus('儲存記錄失敗，本地儲存空間不足。', 'error');
     }
   };
 
-  const deleteHistoryItem = async (id) => {
+  const deleteHistoryItem = (id) => {
     if (window.confirm('確定要刪除這條記錄嗎？')) {
-      const historyDocRef = doc(getHistoryCollectionRef(), id);
       try {
-          await deleteDoc(historyDocRef);
-          showStatus('記錄已從雲端刪除!', 'success');
+          const updatedHistory = history.filter(item => item.id !== id);
+          localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(updatedHistory));
+          setHistory(updatedHistory);
+          showStatus('記錄已從本地刪除!', 'success');
       } catch (e) {
           console.error("Failed to delete history record:", e);
           showStatus('刪除記錄失敗。', 'error');
@@ -522,7 +397,7 @@ export default function App() {
     }
   };
   
-  // --- Inventory Handlers (Update `carInventory` state, then rely on `saveSettings` or prompt for it) ---
+  // --- Inventory Handlers ---
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
@@ -540,7 +415,8 @@ export default function App() {
         return rest;
       });
       setEditingManufacturer(null);
-      saveSettings();
+      // Wait for state to update, then save
+      setTimeout(saveSettings, 0); 
     }
   };
   
@@ -560,7 +436,8 @@ export default function App() {
       [mfrName]: { ...prev[mfrName], models: [...prev[mfrName].models, newCar] }
     }));
     setNewModel({ id: '', years: '', codes: '' });
-    saveSettings();
+    // Wait for state to update, then save
+    setTimeout(saveSettings, 0);
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
@@ -569,7 +446,8 @@ export default function App() {
         ...prev,
         [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
       }));
-      saveSettings();
+      // Wait for state to update, then save
+      setTimeout(saveSettings, 0);
     }
   };
 
@@ -633,35 +511,6 @@ export default function App() {
   
 
   // --- Render Logic ---
-  if (!isFirebaseConfigAvailable) {
-      return (
-          <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
-              <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg border border-red-300">
-                  <AlertTriangle className="w-8 h-8 text-red-600 mb-4" />
-                  <p className="text-gray-700 font-bold mb-2">Firebase 配置錯誤</p>
-                  <p className="text-sm text-red-500 text-center">
-                      Canvas 環境未能自動注入 Firebase 配置（`__firebase_config`）。
-                  </p>
-                  <p className="text-xs text-gray-500 mt-3 text-center">
-                      請確保此應用程式是在支援雲端數據庫的環境中運行。
-                  </p>
-              </div>
-          </div>
-      );
-  }
-
-  if (isLoading || !isAuthReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg">
-          <Loader className="w-8 h-8 animate-spin text-blue-600 mb-4" />
-          <p className="text-gray-700 font-medium">正在連接至雲端數據庫 (Firebase)...</p>
-          <p className="text-xs text-gray-400 mt-1">請稍候</p>
-        </div>
-      </div>
-    );
-  }
-
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
@@ -673,11 +522,9 @@ export default function App() {
             <Truck className="w-6 h-6 text-blue-300" />
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
-            {userId && (
-              <span className="text-xs bg-blue-700 px-2 py-0.5 rounded-full hidden md:inline-block" title="您的用戶ID (用於數據安全隔離)">
-                ID: {userId}
-              </span>
-            )}
+            <span className="text-xs bg-red-600 px-2 py-0.5 rounded-full" title="數據儲存在您的瀏覽器中，不會跨設備同步。">
+              本地儲存模式
+            </span>
           </div>
           <div className="flex gap-1 bg-blue-800 p-1 rounded-lg">
             <button 
@@ -706,11 +553,6 @@ export default function App() {
             </button>
           </div>
         </div>
-        {userId && (
-            <div className='max-w-3xl mx-auto mt-2 text-center text-xs text-blue-300 md:hidden'>
-                ID: {userId}
-            </div>
-        )}
       </div>
 
       <div className="max-w-3xl mx-auto p-4">
@@ -878,7 +720,7 @@ export default function App() {
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
-                  <span>記錄預算 (儲存至雲端)</span>
+                  <span>記錄預算 (儲存至本地)</span>
                 </button>
               </div>
 
@@ -903,7 +745,7 @@ export default function App() {
              <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <List className="w-6 h-6 text-blue-600" />
-                雲端儲存記錄
+                本地儲存記錄
               </h2>
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
@@ -912,7 +754,7 @@ export default function App() {
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
-                <p className='text-xs text-gray-300 mt-2'>數據儲存於 Firestore 雲端資料庫</p>
+                <p className='text-xs text-gray-300 mt-2'>數據儲存於瀏覽器本地儲存</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -992,7 +834,7 @@ export default function App() {
                   <RotateCcw className="w-4 h-4" /> 重置
                 </button>
                 <button onClick={saveSettings} className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm">
-                  <Save className="w-4 h-4" /> 儲存設定到雲端
+                  <Save className="w-4 h-4" /> 儲存設定到本地
                 </button>
               </div>
             </div>
@@ -1122,7 +964,7 @@ export default function App() {
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-yellow-50 p-2 rounded">
                 <Info className="w-4 h-4 mt-0.5 text-yellow-600" />
-                <p>匯率數據儲存在雲端。更改後請記得按 **儲存設定**。</p>
+                <p>匯率數據儲存在本地瀏覽器中。更改後請記得按 **儲存設定**。</p>
               </div>
             </Card>
 
