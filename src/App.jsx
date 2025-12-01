@@ -196,6 +196,7 @@ export default function App() {
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFirebaseConfigAvailable, setIsFirebaseConfigAvailable] = useState(true); // New state for config check
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 
@@ -235,33 +236,41 @@ export default function App() {
 
   // --- 1. Firebase Initialization and Authentication ---
   useEffect(() => {
-    let firebaseConfig = {};
+    let firebaseConfig = null;
+    let configAvailable = false;
+
     try {
-        // 嘗試解析全局變數
+        // 1. 安全地檢查和解析全局配置
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
             firebaseConfig = JSON.parse(__firebase_config);
+            if (Object.keys(firebaseConfig).length > 0) {
+                configAvailable = true;
+            }
         }
     } catch (e) {
         console.error("Failed to parse __firebase_config JSON:", e);
     }
     
-    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
-        // 這是您看到的第一個錯誤，通常在環境初始化時發生
-        console.error("Firebase config is missing or invalid. Cannot initialize.");
+    // 2. 處理配置缺失的情況
+    if (!configAvailable || !firebaseConfig) {
+        console.error("Firebase config is missing or invalid. Cannot initialize Firebase services.");
+        setIsFirebaseConfigAvailable(false);
         setIsLoading(false);
         setIsAuthReady(false);
         return;
     }
+
+    setIsFirebaseConfigAvailable(true); // Configuration is present
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const firestore = getFirestore(app);
     setDb(firestore);
 
-    // 解決 'Access to storage is not allowed' 錯誤：設定為 In-Memory 持久化
+    // 3. 初始化 Auth 並設定 In-Memory 持久化 (解決 'Access to storage' 錯誤)
     const initializeAuth = async () => {
         try {
-            // 必須在登入前設定持久化，否則 Firebase 會嘗試使用 localStorage/indexedDB
+            // 必須在登入前設定持久化
             await setPersistence(auth, inMemoryPersistence);
 
             const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -273,6 +282,7 @@ export default function App() {
                         if (typeof __initial_auth_token !== 'undefined') {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
+                            // 降級為匿名登入
                             await signInAnonymously(auth);
                         }
                     } catch (error) {
@@ -286,9 +296,10 @@ export default function App() {
             return () => unsubscribe();
         } catch (error) {
             console.error("Auth Persistence Setup Failed:", error);
-            setIsAuthReady(false);
-            setIsLoading(false);
+            // 如果持久化設置失敗，我們仍然可以嘗試繼續，但可能會遇到錯誤
+            setIsAuthReady(true); 
         }
+        setIsLoading(false);
     };
 
     const cleanup = initializeAuth();
@@ -310,7 +321,7 @@ export default function App() {
 
   // --- 2. Data Synchronization (Load and Listen) ---
   useEffect(() => {
-      if (!isAuthReady || !db || !userId) return;
+      if (!isAuthReady || !db || !userId || !isFirebaseConfigAvailable) return;
 
       let unsubscribeSettings = () => {};
       let unsubscribeHistory = () => {};
@@ -318,6 +329,8 @@ export default function App() {
       const settingsRef = getSettingsDocRef();
       const historyCollectionRef = getHistoryCollectionRef();
       
+      if (!settingsRef || !historyCollectionRef) return;
+
       // 1. Settings Listener (Rates, Fees, Inventory)
       unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -356,7 +369,7 @@ export default function App() {
           unsubscribeSettings();
           unsubscribeHistory();
       };
-  }, [isAuthReady, db, userId, getSettingsDocRef, getHistoryCollectionRef]);
+  }, [isAuthReady, db, userId, getSettingsDocRef, getHistoryCollectionRef, isFirebaseConfigAvailable]);
 
 
   // When country changes, reset fees to defaults
@@ -457,7 +470,7 @@ export default function App() {
 
     // 將所有計算時使用的數值和結構全部存入記錄中
     const newRecordContent = {
-      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }), 
+      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong-Kong' }), 
       countryId: selectedCountry,
       
       inputValues: {
@@ -620,17 +633,29 @@ export default function App() {
   
 
   // --- Render Logic ---
+  if (!isFirebaseConfigAvailable) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+              <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg border border-red-300">
+                  <AlertTriangle className="w-8 h-8 text-red-600 mb-4" />
+                  <p className="text-gray-700 font-bold mb-2">Firebase 配置錯誤</p>
+                  <p className="text-sm text-red-500 text-center">
+                      Canvas 環境未能自動注入 Firebase 配置（`__firebase_config`）。
+                  </p>
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                      請確保此應用程式是在支援雲端數據庫的環境中運行。
+                  </p>
+              </div>
+          </div>
+      );
+  }
+
   if (isLoading || !isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg">
           <Loader className="w-8 h-8 animate-spin text-blue-600 mb-4" />
-          <p className="text-gray-700 font-medium">正在連接至雲端數據庫...</p>
-          {(!isAuthReady || !db) && (
-             <p className="text-xs text-red-400 mt-2 text-center">
-                 初始化中... 若卡住請檢查控制台是否有 'Firebase config is missing' 錯誤。
-             </p>
-          )}
+          <p className="text-gray-700 font-medium">正在連接至雲端數據庫 (Firebase)...</p>
           <p className="text-xs text-gray-400 mt-1">請稍候</p>
         </div>
       </div>
