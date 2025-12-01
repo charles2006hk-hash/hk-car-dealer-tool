@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
+
+// --- Firebase Imports ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, collection, query, onSnapshot, addDoc, deleteDoc } from 'firebase/firestore';
+
 
 // --- Global Constants & FRT Calculation ---
 
+// NOTE: These constants serve as initial defaults only. Actual state is loaded from Firestore.
 const DEFAULT_RATES = {
-  JP: 0.053, // JPY to HKD
-  UK: 10.2,  // GBP to HKD
-  DE: 8.6,   // EUR to HKD
+  JP: 0.053, 
+  UK: 10.2, 
+  DE: 8.6,   
 };
 
 const COUNTRIES = {
@@ -15,108 +22,41 @@ const COUNTRIES = {
   DE: { id: 'DE', name: '德國 (Germany)', currency: 'EUR', symbol: '€' },
 };
 
-// 更新預設費用結構：移除 HK 費用中的 'tax' 項目，因為它現在是計算出來的 FRT。
 const DEFAULT_FEES = {
   JP: {
-    origin: {
-      auctionFee: { label: '拍賣場/FOB費用', val: 20000 },
-      shipping: { label: '船運費', val: 100000 },
-    },
-    hk: {
-      transport: { label: '本地拖車/運輸', val: 2000 },
-      inspection: { label: '驗車/政府排氣', val: 5500 },
-      parts: { label: '更換配件/維修', val: 3000 },
-      insurance: { label: '保險費', val: 1500 },
-      license: { label: '牌費', val: 5800 },
-    }
+    origin: { auctionFee: { label: '拍賣場/FOB費用', val: 20000 }, shipping: { label: '船運費', val: 100000 } },
+    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 5500 }, parts: { label: '更換配件/維修', val: 3000 }, insurance: { label: '保險費', val: 1500 }, license: { label: '牌費', val: 5800 } }
   },
   UK: {
-    origin: {
-      auctionFee: { label: '出口手續費', val: 500 },
-      shipping: { label: '船運費', val: 1500 },
-    },
-    hk: {
-      transport: { label: '本地拖車/運輸', val: 2000 },
-      inspection: { label: '驗車/政府排氣', val: 6500 },
-      parts: { label: '更換配件/維修', val: 4000 },
-      insurance: { label: '保險費', val: 2000 },
-      license: { label: '牌費', val: 5800 },
-    }
+    origin: { auctionFee: { label: '出口手續費', val: 500 }, shipping: { label: '船運費', val: 1500 } },
+    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 6500 }, parts: { label: '更換配件/維修', val: 4000 }, insurance: { label: '保險費', val: 2000 }, license: { label: '牌費', val: 5800 } }
   },
   DE: {
-    origin: {
-      auctionFee: { label: '出口手續費', val: 400 },
-      shipping: { label: '船運費', val: 1200 },
-    },
-    hk: {
-      transport: { label: '本地拖車/運輸', val: 2000 },
-      inspection: { label: '驗車/政府排氣', val: 6500 },
-      parts: { label: '更換配件/維修', val: 4000 },
-      insurance: { label: '保險費', val: 2000 },
-      license: { label: '牌費', val: 5800 },
-    }
+    origin: { auctionFee: { label: '出口手續費', val: 400 }, shipping: { label: '船運費', val: 1200 } },
+    hk: { transport: { label: '本地拖車/運輸', val: 2000 }, inspection: { label: '驗車/政府排氣', val: 6500 }, parts: { label: '更換配件/維修', val: 4000 }, insurance: { label: '保險費', val: 2000 }, license: { label: '牌費', val: 5800 } }
   }
 };
 
 const DEFAULT_INVENTORY = {
-  Toyota: {
-    models: [
-      { id: 'Alphard', years: ['2023', '2022', '2021'], codes: ['AH30', 'AH40'] },
-      { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] },
-    ]
-  },
-  Honda: {
-    models: [
-      { id: 'Stepwgn', years: ['2024', '2022'], codes: ['RP6', 'RK5'] },
-      { id: 'Vezel', years: ['2023', '2020'], codes: ['RV3', 'RU1'] },
-    ]
-  },
+  Toyota: { models: [{ id: 'Alphard', years: ['2023', '2022', '2021'], codes: ['AH30', 'AH40'] }, { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] }] },
+  Honda: { models: [{ id: 'Stepwgn', years: ['2024', '2022'], codes: ['RP6', 'RK5'] }, { id: 'Vezel', years: ['2023', '2020'], codes: ['RV3', 'RU1'] }] },
   BMW: { models: [] },
 };
 
 /**
  * 根據香港累進稅率計算汽車首次登記稅 (FRT)
- * @param {number} prp - 汽車的核准公布零售價 (Approved Retail Price, HKD)
- * @returns {number} 計算出的首次登記稅 (FRT)
  */
 const calculateFRT = (prp) => {
     let taxableValue = parseFloat(prp) || 0;
     let frt = 0;
-
-    // 1. 最初的 $150,000 @ 46%
-    if (taxableValue > 0) {
-        const tierLimit = 150000;
-        const amountInTier = Math.min(taxableValue, tierLimit);
-        frt += amountInTier * 0.46;
-        taxableValue -= amountInTier;
-    }
-
-    // 2. 其次的 $150,000 @ 86% (累積 $150,001 - $300,000)
-    if (taxableValue > 0) {
-        const tierLimit = 150000;
-        const amountInTier = Math.min(taxableValue, tierLimit);
-        frt += amountInTier * 0.86;
-        taxableValue -= amountInTier;
-    }
-
-    // 3. 接著的 $200,000 @ 115% (累積 $300,001 - $500,000)
-    if (taxableValue > 0) {
-        const tierLimit = 200000;
-        const amountInTier = Math.min(taxableValue, tierLimit);
-        frt += amountInTier * 1.15;
-        taxableValue -= amountInTier;
-    }
-
-    // 4. 剩餘部分 @ 132% (累積 $500,001 以上)
-    if (taxableValue > 0) {
-        frt += taxableValue * 1.32;
-    }
-
+    if (taxableValue > 0) { frt += Math.min(taxableValue, 150000) * 0.46; taxableValue -= Math.min(taxableValue, 150000); }
+    if (taxableValue > 0) { frt += Math.min(taxableValue, 150000) * 0.86; taxableValue -= Math.min(taxableValue, 150000); }
+    if (taxableValue > 0) { frt += Math.min(taxableValue, 200000) * 1.15; taxableValue -= Math.min(taxableValue, 200000); }
+    if (taxableValue > 0) { frt += taxableValue * 1.32; }
     return frt;
 };
 
-// --- Components ---
-
+// --- Helper Components ---
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
     {children}
@@ -130,25 +70,18 @@ const SectionHeader = ({ icon: Icon, title, color = "text-gray-800" }) => (
   </div>
 );
 
-// Autocomplete Input Component (Unchanged)
 const AutocompleteInput = ({ label, value, onChange, options = [], disabled = false, placeholder = "輸入或選擇" }) => {
   const [searchTerm, setSearchTerm] = useState(value || '');
   const [isOpen, setIsOpen] = useState(false);
   
-  // 當父元件 value 變更時，更新內部 searchTerm
   useEffect(() => {
     setSearchTerm(value || '');
   }, [value]);
 
-  // 過濾選項：不區分大小寫，只匹配英文部分 (或全字匹配)
   const filteredOptions = useMemo(() => {
     if (!searchTerm) return options;
     const lowerSearch = searchTerm.toLowerCase();
-    
-    return options.filter(option => 
-      // 確保 option 是字串
-      typeof option === 'string' && option.toLowerCase().includes(lowerSearch)
-    );
+    return options.filter(option => typeof option === 'string' && option.toLowerCase().includes(lowerSearch));
   }, [searchTerm, options]);
 
   const handleSelect = useCallback((option) => {
@@ -161,7 +94,6 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
     const newVal = e.target.value;
     setSearchTerm(newVal);
     setIsOpen(true);
-    // 允許用戶輸入不在列表中的值
     onChange(newVal); 
   };
   
@@ -207,7 +139,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
             <li
               key={index}
               className="px-3 py-2 text-sm text-gray-700 cursor-pointer hover:bg-blue-50 hover:text-blue-600"
-              onClick={() => handleSelect(option)}
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(option); }} // Use onMouseDown to prevent blur/loss of focus issue
             >
               {option}
             </li>
@@ -221,10 +153,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   );
 };
 
-
-// Simple Number/Text Input Group (MODIFIED to include required mark and validation border)
 const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "", required = false }) => {
-  // 檢查是否為必填且值無效 (空字串、0、或非數字)
   const isInvalid = required && (value === '' || parseFloat(value) <= 0 || isNaN(parseFloat(value)));
   
   return (
@@ -262,34 +191,32 @@ const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1
 // --- Main App Component ---
 
 export default function App() {
-  // --- State ---
-  const [activeTab, setActiveTab] = useState('calculator'); // 'calculator' | 'settings' | 'history'
+  // --- Firebase State ---
+  const [db, setDb] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+
+  // --- Application State (Synced with Firestore) ---
+  const [activeTab, setActiveTab] = useState('calculator'); 
   const [selectedCountry, setSelectedCountry] = useState('JP');
-  
-  // Settings State (Persisted)
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [defaultFees, setDefaultFees] = useState(DEFAULT_FEES);
   const [carInventory, setCarInventory] = useState(DEFAULT_INVENTORY); 
-
-  // Calculator State (Temporary)
+  const [history, setHistory] = useState([]);
+  
+  // --- Temporary Calculator State ---
   const [carPrice, setCarPrice] = useState('');
-  // 新增：汽車核准公布零售價 (PRP)
   const [approvedRetailPrice, setApprovedRetailPrice] = useState(''); 
   const [currentOriginFees, setCurrentOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currentHKFees, setCurrentHKFees] = useState(DEFAULT_FEES['JP'].hk);
-  
-  // Car Details State
   const [carDetails, setCarDetails] = useState({
-    manufacturer: '',
-    model: '',
-    year: '',
-    code: ''
+    manufacturer: '', model: '', year: '', code: ''
   });
 
-  // History State
-  const [history, setHistory] = useState([]);
-  
-  // Settings UI State
+  // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
   const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
@@ -298,179 +225,259 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
 
 
-  // Load settings & history from local storage on mount
+  // --- 1. Firebase Initialization and Authentication ---
   useEffect(() => {
-    const savedRates = localStorage.getItem('hkCarDealer_rates');
-    const savedFees = localStorage.getItem('hkCarDealer_fees');
-    const savedHistory = localStorage.getItem('hkCarDealer_history');
-    const savedInventory = localStorage.getItem('hkCarDealer_inventory');
-    
-    // --- Console Debugging: Log initial load status ---
-    console.log("Loading data from localStorage...");
-
-    if (savedRates) setRates(JSON.parse(savedRates));
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
-    if (savedInventory) setCarInventory(JSON.parse(savedInventory));
-
-    // Fees structure cleanup: Remove old 'tax' property if loaded from storage
-    if (savedFees) {
-        try {
-            const loadedFees = JSON.parse(savedFees);
-            Object.keys(loadedFees).forEach(countryId => {
-                if (loadedFees[countryId].hk && loadedFees[countryId].hk.tax) {
-                    delete loadedFees[countryId].hk.tax;
-                    console.log(`Removed deprecated 'tax' from HK fees for ${countryId}.`);
-                }
-            });
-            setDefaultFees(loadedFees);
-            console.log("Fees loaded/cleaned successfully.");
-        } catch (error) {
-            console.error("Error parsing saved fees, resetting to default.", error);
-            setDefaultFees(DEFAULT_FEES);
-        }
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
+        console.error("Firebase config is missing or invalid. Cannot initialize.");
+        return;
     }
-    
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const firestore = getFirestore(app);
+    setDb(firestore);
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            setUserId(user.uid);
+        } else {
+            // Attempt to sign in using custom token or anonymously
+            try {
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase sign-in failed:", error);
+                // Fallback to anonymous sign-in if custom token fails
+                await signInAnonymously(auth);
+            }
+        }
+        setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // When country changes, reset fees to defaults but KEEP car details
+  // --- Firestore Reference Helpers ---
+  // Private Data Path: /artifacts/{appId}/users/{userId}/...
+  const getSettingsDocRef = useCallback(() => {
+      if (!db || !userId) return null;
+      return doc(db, `artifacts/${appId}/users/${userId}/settings/dealerSettings`);
+  }, [db, userId, appId]);
+
+  const getHistoryCollectionRef = useCallback(() => {
+      if (!db || !userId) return null;
+      return collection(db, `artifacts/${appId}/users/${userId}/history`);
+  }, [db, userId, appId]);
+
+  // --- 2. Data Synchronization (Load and Listen) ---
   useEffect(() => {
-    setCurrentOriginFees(defaultFees[selectedCountry].origin);
-    setCurrentHKFees(defaultFees[selectedCountry].hk);
-    setCarPrice('');
-    setApprovedRetailPrice(''); // Reset PRP as it is often tied to the car
+      if (!isAuthReady || !db || !userId) return;
+
+      let unsubscribeSettings = () => {};
+      let unsubscribeHistory = () => {};
+
+      const settingsRef = getSettingsDocRef();
+      const historyCollectionRef = getHistoryCollectionRef();
+      
+      // 1. Settings Listener (Rates, Fees, Inventory)
+      unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
+          if (docSnap.exists()) {
+              const data = docSnap.data();
+              setRates(data.rates || DEFAULT_RATES);
+              setDefaultFees(data.defaultFees || DEFAULT_FEES);
+              setCarInventory(data.carInventory || DEFAULT_INVENTORY);
+          } else {
+              // If settings doc doesn't exist, create it with defaults
+              setDoc(settingsRef, {
+                  rates: DEFAULT_RATES,
+                  defaultFees: DEFAULT_FEES,
+                  carInventory: DEFAULT_INVENTORY
+              }, { merge: true }).catch(e => console.error("Error creating default settings:", e));
+          }
+          setIsLoading(false); // Data loaded, stop loading
+      }, (error) => {
+          console.error("Settings snapshot error:", error);
+          setIsLoading(false);
+      });
+
+      // 2. History Listener
+      // We query the collection and sort locally since we cannot enforce indexes here.
+      const historyQuery = query(historyCollectionRef);
+      unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
+          const loadedHistory = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+          }));
+          // Sort locally by ID (which is the timestamp of creation) descending (newest first)
+          loadedHistory.sort((a, b) => b.id.localeCompare(a.id)); 
+          setHistory(loadedHistory);
+      }, (error) => console.error("History snapshot error:", error));
+
+      return () => {
+          unsubscribeSettings();
+          unsubscribeHistory();
+      };
+  }, [isAuthReady, db, userId, getSettingsDocRef, getHistoryCollectionRef]);
+
+
+  // When country changes, reset fees to defaults
+  useEffect(() => {
+    if (defaultFees[selectedCountry]) {
+      setCurrentOriginFees(defaultFees[selectedCountry].origin);
+      setCurrentHKFees(defaultFees[selectedCountry].hk);
+      setCarPrice('');
+      setApprovedRetailPrice('');
+    }
   }, [selectedCountry, defaultFees]);
 
-  // Save settings handler
-  const saveSettings = () => {
-    localStorage.setItem('hkCarDealer_rates', JSON.stringify(rates));
-    localStorage.setItem('hkCarDealer_fees', JSON.stringify(defaultFees));
-    localStorage.setItem('hkCarDealer_inventory', JSON.stringify(carInventory));
-    
-    // Add success feedback for settings save
-    setSaveStatus({ message: '設定已成功儲存！', type: 'success' });
+  // --- 3. Data Saving Handlers (Firestore Operations) ---
+  const showStatus = (message, type) => {
+    setSaveStatus({ message, type });
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
-  const resetSettings = () => {
-    if(window.confirm('確定要重置所有設定回預設值嗎？')) {
-      setRates(DEFAULT_RATES);
-      setDefaultFees(DEFAULT_FEES);
-      setCarInventory(DEFAULT_INVENTORY);
-      localStorage.removeItem('hkCarDealer_rates');
-      localStorage.removeItem('hkCarDealer_fees');
-      localStorage.removeItem('hkCarDealer_inventory');
-      
-      setCurrentOriginFees(DEFAULT_FEES[selectedCountry].origin);
-      setCurrentHKFees(DEFAULT_FEES[selectedCountry].hk);
-      setCarPrice('');
-      setApprovedRetailPrice('');
-      
-      // Add success feedback for reset
-      setSaveStatus({ message: '所有設定已重置回預設值。', type: 'success' });
-      setTimeout(() => setSaveStatus(null), 3000);
+  const saveSettings = async () => {
+    const settingsRef = getSettingsDocRef();
+    if (!settingsRef) return showStatus('Firestore 未初始化，無法儲存', 'error');
+
+    try {
+        await setDoc(settingsRef, { 
+            rates, 
+            defaultFees, 
+            carInventory 
+        }, { merge: true });
+        showStatus('設定已成功儲存到雲端！', 'success');
+    } catch (e) {
+        console.error("Failed to save settings to Firestore:", e);
+        showStatus('儲存設定失敗，請檢查網路連接。', 'error');
     }
   };
 
-  // --- Calculations ---
-  
-  const currentCurrency = COUNTRIES[selectedCountry];
-  // 強化匯率解析
-  const currentRate = parseFloat(rates[selectedCountry]) || 0; 
-  if (currentRate === 0) {
-      console.warn(`Exchange rate for ${selectedCountry} is 0 or invalid.`);
-  }
+  const resetSettings = async () => {
+    if(window.confirm('確定要重置所有設定回預設值嗎？')) {
+      const settingsRef = getSettingsDocRef();
+      if (!settingsRef) return showStatus('Firestore 未初始化，無法重置', 'error');
 
-  // 1. Car Cost in HKD
-  const carPriceVal = parseFloat(carPrice) || 0;
-  const carPriceHKD = carPriceVal * currentRate;
-
-  // 2. Origin Fees in HKD
-  let totalOriginFeesNative = 0;
-  Object.values(currentOriginFees).forEach(fee => {
-    totalOriginFeesNative += parseFloat(fee.val) || 0;
-  });
-  const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
-
-  // 3. Calculated First Registration Tax (FRT)
-  const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
-  const calculatedFRT = calculateFRT(approvedRetailPriceVal);
-
-  // 4. HK Fees in HKD (excluding FRT)
-  let totalHKFeesWithoutFRT = 0;
-  Object.values(currentHKFees).forEach(fee => {
-    totalHKFeesWithoutFRT += parseFloat(fee.val) || 0;
-  });
-
-  // 5. Total HK Fees (HK Fees + FRT)
-  const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
-
-  // 6. Grand Total
-  const grandTotal = carPriceHKD + totalOriginFeesHKD + totalHKFees;
-
-  // Formatters
-  const fmtMoney = (amount, currency = 'HKD') => {
-    if (isNaN(amount) || amount === null) return 'N/A';
-    return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
+      try {
+        await setDoc(settingsRef, {
+            rates: DEFAULT_RATES,
+            defaultFees: DEFAULT_FEES,
+            carInventory: DEFAULT_INVENTORY
+        });
+        showStatus('所有設定已重置回預設值。', 'success');
+      } catch (e) {
+          console.error("Failed to reset settings:", e);
+          showStatus('重置設定失敗。', 'error');
+      }
+    }
   };
   
-  // --- Handlers ---
-
-  const handleCarDetailChange = (field, value) => {
-    setCarDetails(prev => {
-      const newDetails = { ...prev, [field]: value };
-      
-      // Reset dependent fields if parent field changes
-      if (field === 'manufacturer' && prev.manufacturer !== value) {
-        newDetails.model = '';
-        newDetails.year = '';
-        newDetails.code = '';
-      } else if (field === 'model' && prev.model !== value) {
-        newDetails.year = '';
-        newDetails.code = '';
-      } else if (field === 'year' && prev.year !== value) {
-        newDetails.code = '';
+  // Update Fee structure in state, preparing for Firestore sync
+  const handleDefaultFeeChange = (countryId, type, key, val) => {
+    setDefaultFees(prev => {
+      const newFees = {
+        ...prev,
+        [countryId]: {
+          ...prev[countryId],
+          [type]: {
+            ...prev[countryId][type],
+            [key]: { ...prev[countryId][type][key], val: val }
+          }
+        }
+      };
+      // Immediately sync state for current calculation
+      if (countryId === selectedCountry) {
+          if (type === 'origin') setCurrentOriginFees(newFees[countryId].origin);
+          if (type === 'hk') setCurrentHKFees(newFees[countryId].hk);
       }
-      return newDetails;
+      return newFees;
     });
   };
 
-  // Manufacturer (Mfr) Options
-  const manufacturerOptions = useMemo(() => Object.keys(carInventory), [carInventory]);
+  const handleRateChange = (countryId, val) => {
+    setRates(prev => ({ ...prev, [countryId]: val }));
+  };
 
-  // Model Options (depends on selected Manufacturer)
-  const modelOptions = useMemo(() => {
-    const mfrData = carInventory[carDetails.manufacturer];
-    return mfrData ? mfrData.models.map(m => m.id) : [];
-  }, [carInventory, carDetails.manufacturer]);
 
-  // Year Options (depends on selected Model)
-  const yearOptions = useMemo(() => {
-    const mfrData = carInventory[carDetails.manufacturer];
-    if (!mfrData) return [];
-    const modelData = mfrData.models.find(m => m.id === carDetails.model);
-    return modelData ? modelData.years : [];
-  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+  const saveToHistory = async () => {
+    
+    // --- Pre-check: Ensure critical fields are non-zero ---
+    if (carPriceVal <= 0 || approvedRetailPriceVal <= 0) {
+        return showStatus('請輸入有效的車價及PRP以進行記錄!', 'error');
+    }
+    
+    if (grandTotal <= 0) {
+      return showStatus('總成本計算結果為零或無效!', 'error');
+    }
 
-  // Code Options (depends on selected Model)
-  const codeOptions = useMemo(() => {
-    const mfrData = carInventory[carDetails.manufacturer];
-    if (!mfrData) return [];
-    const modelData = mfrData.models.find(m => m.id === carDetails.model);
-    return modelData ? modelData.codes : [];
-  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+    const historyCollectionRef = getHistoryCollectionRef();
+    if (!historyCollectionRef) return showStatus('Firestore 未初始化，無法儲存記錄', 'error');
+
+    // 將所有計算時使用的數值和結構全部存入記錄中
+    const newRecordContent = {
+      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }), 
+      countryId: selectedCountry,
+      
+      inputValues: {
+          rate: currentRate,
+          carPriceNative: carPriceVal,
+          approvedRetailPrice: approvedRetailPriceVal,
+      },
+      
+      carDetails: { ...carDetails }, 
+
+      feesAtTimeOfSaving: {
+          origin: currentOriginFees,
+          hk: currentHKFees, 
+      },
+      
+      calculations: {
+        carPriceHKD,
+        totalOriginFeesHKD,
+        totalHKFeesWithoutFRT,
+        calculatedFRT,         
+        grandTotal
+      }
+    };
+
+    try {
+        // 使用 addDoc，Firestore 會自動生成 ID
+        await addDoc(historyCollectionRef, newRecordContent);
+        showStatus('記錄成功儲存到雲端！', 'success');
+        
+        // Go to history tab after a small delay 
+        setTimeout(() => setActiveTab('history'), 800);
+        
+    } catch (e) {
+        console.error("Failed to add history record:", e);
+        showStatus('儲存記錄失敗，請檢查網路連接。', 'error');
+    }
+  };
+
+  const deleteHistoryItem = async (id) => {
+    if (window.confirm('確定要刪除這條記錄嗎？')) {
+      const historyDocRef = doc(getHistoryCollectionRef(), id);
+      try {
+          await deleteDoc(historyDocRef);
+          showStatus('記錄已從雲端刪除!', 'success');
+      } catch (e) {
+          console.error("Failed to delete history record:", e);
+          showStatus('刪除記錄失敗。', 'error');
+      }
+    }
+  };
   
+  // --- Inventory Handlers (Update `carInventory` state, then rely on `saveSettings` or prompt for it) ---
   const handleAddManufacturer = () => {
     const name = newManufacturer.trim();
     if (!name || carInventory[name]) {
-      // Improved feedback for settings
-      setSaveStatus({ message: '製造商名稱無效或已存在!', type: 'error' });
-      setTimeout(() => setSaveStatus(null), 3000);
-      return;
+      return showStatus('製造商名稱無效或已存在!', 'error');
     }
-    setCarInventory(prev => ({
-      ...prev,
-      [name]: { models: [] }
-    }));
+    setCarInventory(prev => ({ ...prev, [name]: { models: [] } }));
     setNewManufacturer('');
     saveSettings(); 
   };
@@ -488,33 +495,18 @@ export default function App() {
   
   const handleAddModel = (mfrName) => {
     const modelId = newModel.id.trim();
-    if (!modelId || !carInventory[mfrName]) {
-      setSaveStatus({ message: '型號名稱無效!', type: 'error' });
-      setTimeout(() => setSaveStatus(null), 3000);
-      return;
+    if (!modelId || !carInventory[mfrName] || carInventory[mfrName].models.some(m => m.id === modelId)) {
+      return showStatus('型號名稱無效或已存在!', 'error');
     }
 
     const yearsArray = newModel.years.split(',').map(s => s.trim()).filter(s => s);
     const codesArray = newModel.codes.split(',').map(s => s.trim()).filter(s => s);
 
-    if (carInventory[mfrName].models.some(m => m.id === modelId)) {
-        setSaveStatus({ message: '該型號已存在!', type: 'error' });
-        setTimeout(() => setSaveStatus(null), 3000);
-        return;
-    }
-
-    const newCar = {
-      id: modelId,
-      years: yearsArray,
-      codes: codesArray,
-    };
+    const newCar = { id: modelId, years: yearsArray, codes: codesArray };
 
     setCarInventory(prev => ({
       ...prev,
-      [mfrName]: {
-        ...prev[mfrName],
-        models: [...prev[mfrName].models, newCar]
-      }
+      [mfrName]: { ...prev[mfrName], models: [...prev[mfrName].models, newCar] }
     }));
     setNewModel({ id: '', years: '', codes: '' });
     saveSettings();
@@ -524,152 +516,100 @@ export default function App() {
     if (window.confirm(`確定要刪除型號 "${modelId}" 嗎？`)) {
       setCarInventory(prev => ({
         ...prev,
-        [mfrName]: {
-          ...prev[mfrName],
-          models: prev[mfrName].models.filter(m => m.id !== modelId)
-        }
+        [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
       }));
       saveSettings();
     }
   };
 
-  const handleOriginFeeChange = (key, value) => {
-    setCurrentOriginFees(prev => ({
-      ...prev,
-      [key]: { ...prev[key], val: value }
-    }));
-  };
 
-  const handleHKFeeChange = (key, value) => {
-    setCurrentHKFees(prev => ({
-      ...prev,
-      [key]: { ...prev[key], val: value }
-    }));
-  };
+  // --- Calculations & Memoizations (Unchanged) ---
+  const currentCurrency = COUNTRIES[selectedCountry];
+  const currentRate = parseFloat(rates[selectedCountry]) || 0; 
 
-  const handleRateChange = (countryId, val) => {
-    setRates(prev => ({ ...prev, [countryId]: val }));
-  };
+  const carPriceVal = parseFloat(carPrice) || 0;
+  const carPriceHKD = carPriceVal * currentRate;
 
-  const handleDefaultFeeChange = (countryId, type, key, val) => {
-    setDefaultFees(prev => ({
-      ...prev,
-      [countryId]: {
-        ...prev[countryId],
-        [type]: {
-          ...prev[countryId][type],
-          [key]: { ...prev[countryId][type][key], val: val }
-        }
+  let totalOriginFeesNative = 0;
+  Object.values(currentOriginFees).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
+  const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
+
+  const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
+  const calculatedFRT = calculateFRT(approvedRetailPriceVal);
+
+  let totalHKFeesWithoutFRT = 0;
+  Object.values(currentHKFees).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
+
+  const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
+  const grandTotal = carPriceHKD + totalOriginFeesHKD + totalHKFees;
+
+  const fmtMoney = (amount, currency = 'HKD') => {
+    if (isNaN(amount) || amount === null) return 'N/A';
+    return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
+  };
+  
+  const handleCarDetailChange = (field, value) => {
+    setCarDetails(prev => {
+      const newDetails = { ...prev, [field]: value };
+      if (field === 'manufacturer' && prev.manufacturer !== value) {
+        newDetails.model = ''; newDetails.year = ''; newDetails.code = '';
+      } else if (field === 'model' && prev.model !== value) {
+        newDetails.year = ''; newDetails.code = '';
+      } else if (field === 'year' && prev.year !== value) {
+        newDetails.code = '';
       }
-    }));
+      return newDetails;
+    });
   };
 
-  // --- History Save (CRITICAL FIXES/DEBUGGING ADDED) ---
-  const saveToHistory = () => {
-    
-    // --- 1. Pre-check: Ensure critical fields are non-zero ---
-    if (carPriceVal <= 0 || approvedRetailPriceVal <= 0) {
-        setSaveStatus({ message: '請輸入有效的車價及PRP以進行記錄!', type: 'error' });
-        setTimeout(() => setSaveStatus(null), 3000);
-        console.error("Save failed: Car Price or Approved Retail Price is 0 or less.", { carPriceVal, approvedRetailPriceVal });
-        return;
-    }
-    
-    if (grandTotal <= 0) {
-      setSaveStatus({ message: '總成本計算結果為零或無效!', type: 'error' });
-      setTimeout(() => setSaveStatus(null), 3000);
-      console.error("Save failed: Grand Total is 0 or less.", { grandTotal, carPriceHKD, calculatedFRT });
-      return;
-    }
+  const manufacturerOptions = useMemo(() => Object.keys(carInventory), [carInventory]);
+  const modelOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    return mfrData ? mfrData.models.map(m => m.id) : [];
+  }, [carInventory, carDetails.manufacturer]);
+  const yearOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    if (!mfrData) return [];
+    const modelData = mfrData.models.find(m => m.id === carDetails.model);
+    return modelData ? modelData.years : [];
+  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+  const codeOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    if (!mfrData) return [];
+    const modelData = mfrData.models.find(m => m.id === carDetails.model);
+    return modelData ? modelData.codes : [];
+  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+  
 
-    // --- Debugging Step 1: Log before creating record ---
-    console.log("Attempting to save record. Final Grand Total (must be > 0):", grandTotal);
-    
-    // 將所有計算時使用的數值和結構全部存入記錄中，確保不受未來設定更改影響
-    const newRecord = {
-      id: Date.now(),
-      // FIX: 修正時區名稱 Hono_Kong -> Hong_Kong
-      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' }), 
-      countryId: selectedCountry,
-      
-      // 1. 儲存所有輸入和當時的匯率
-      inputValues: {
-          rate: currentRate,
-          carPriceNative: carPriceVal,
-          approvedRetailPrice: approvedRetailPriceVal,
-      },
-      
-      // 2. 儲存選定的車輛資料 (String Values)
-      carDetails: { ...carDetails }, 
+  // --- Render Logic ---
+  if (isLoading || !isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg">
+          <Loader className="w-8 h-8 animate-spin text-blue-600 mb-4" />
+          <p className="text-gray-700 font-medium">正在連接至雲端數據庫...</p>
+          <p className="text-xs text-gray-400 mt-1">請稍候</p>
+        </div>
+      </div>
+    );
+  }
 
-      // 3. 儲存實際計算時使用的費用結構 (包括 label 和 val)
-      feesAtTimeOfSaving: {
-          origin: currentOriginFees,
-          hk: currentHKFees, // 這是沒有 FRT 的本地費用
-      },
-      
-      // 4. 儲存計算結果明細
-      calculations: {
-        carPriceHKD,
-        totalOriginFeesHKD,
-        totalHKFeesWithoutFRT,
-        calculatedFRT,         // 首次登記稅
-        grandTotal
-      }
-    };
-
-    // --- Debugging Step 2: Log new record ---
-    console.log("New Record created:", newRecord);
-
-    const updatedHistory = [newRecord, ...history];
-    setHistory(updatedHistory);
-    
-    // --- Debugging Step 3: Log history update attempt (Catching localStorage failure) ---
-    try {
-        localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
-        console.log("History successfully stored in localStorage. New length:", updatedHistory.length);
-    } catch (e) {
-        // 如果遇到 "Access to storage is not allowed from this context" 錯誤，這裡會被捕獲
-        console.error("Failed to save history to localStorage. Check browser settings for storage limits/permissions.", e);
-        setSaveStatus({ 
-            message: `記錄已創建，但儲存失敗 (錯誤: ${e.name})。請檢查瀏覽器設定。`, 
-            type: 'error' 
-        });
-        setTimeout(() => setSaveStatus(null), 5000);
-        return; // Exit if storage fails
-    }
-
-    // Success feedback
-    setSaveStatus({ message: '記錄成功儲存並已更新歷史記錄!', type: 'success' });
-    
-    // Go to history tab after a small delay to let the user see the success message
-    setTimeout(() => {
-        setSaveStatus(null);
-        setActiveTab('history');
-    }, 800);
-  };
-
-  const deleteHistoryItem = (id) => {
-    if (window.confirm('確定要刪除這條記錄嗎？')) {
-      const updatedHistory = history.filter(item => item.id !== id);
-      setHistory(updatedHistory);
-      localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
-      
-      setSaveStatus({ message: '記錄已刪除!', type: 'success' });
-      setTimeout(() => setSaveStatus(null), 3000);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       
-      {/* Header (Unchanged) */}
+      {/* Header */}
       <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-40"> 
         <div className="max-w-3xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Truck className="w-6 h-6 text-blue-300" />
             <h1 className="text-lg font-bold tracking-wide hidden sm:block">HK 汽車行家助手</h1>
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
+            {userId && (
+              <span className="text-xs bg-blue-700 px-2 py-0.5 rounded-full hidden md:inline-block" title="您的用戶ID (用於數據安全隔離)">
+                ID: {userId}
+              </span>
+            )}
           </div>
           <div className="flex gap-1 bg-blue-800 p-1 rounded-lg">
             <button 
@@ -698,6 +638,11 @@ export default function App() {
             </button>
           </div>
         </div>
+        {userId && (
+            <div className='max-w-3xl mx-auto mt-2 text-center text-xs text-blue-300 md:hidden'>
+                ID: {userId}
+            </div>
+        )}
       </div>
 
       <div className="max-w-3xl mx-auto p-4">
@@ -706,7 +651,7 @@ export default function App() {
         {activeTab === 'calculator' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             
-            {/* Country Selector (Unchanged) */}
+            {/* Country Selector */}
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {Object.values(COUNTRIES).map(c => (
                 <button
@@ -720,7 +665,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* Car Details Form (Unchanged) */}
+            {/* Car Details Form */}
             <Card className="p-5">
               <SectionHeader icon={Car} title="車輛資料 (可選填)" color="text-gray-600" />
               <div className="grid grid-cols-2 gap-4">
@@ -840,7 +785,7 @@ export default function App() {
               </Card>
             </div>
 
-            {/* Grand Total Bar and Status Message (MODIFIED) */}
+            {/* Grand Total Bar and Status Message */}
             <div className="sticky bottom-0 bg-gray-900 text-white p-4 rounded-2xl shadow-xl z-20">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex-1">
@@ -861,12 +806,11 @@ export default function App() {
                 
                 <button 
                   onClick={saveToHistory}
-                  // 只有當 Grand Total > 0 且兩個必填欄位都有效時才啟用按鈕
                   disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0} 
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
                 >
                   <PlusCircle className="w-5 h-5" />
-                  <span>記錄預算</span>
+                  <span>記錄預算 (儲存至雲端)</span>
                 </button>
               </div>
 
@@ -891,7 +835,7 @@ export default function App() {
              <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <List className="w-6 h-6 text-blue-600" />
-                過往估算記錄
+                雲端儲存記錄
               </h2>
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
@@ -900,6 +844,7 @@ export default function App() {
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
+                <p className='text-xs text-gray-300 mt-2'>數據儲存於 Firestore 雲端資料庫</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -910,7 +855,6 @@ export default function App() {
                          <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">
                            {item.countryId}
                          </span>
-                         {/* FIX: RangeError 已解決，可以正常顯示日期 */}
                          <span className="text-sm text-gray-500 flex items-center gap-1">
                            <Calendar className="w-3 h-3" /> {item.date}
                          </span>
@@ -937,7 +881,6 @@ export default function App() {
                         <div className="text-2xl font-bold text-blue-900">
                           {fmtMoney(item.calculations.grandTotal)}
                         </div>
-                        {/* 使用歷史記錄中的匯率 */}
                         <div className="text-xs text-gray-500">
                           當時匯率 @ {item.inputValues.rate}
                         </div>
@@ -970,7 +913,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- SETTINGS TAB (Inventory and Fees management remain the same) --- */}
+        {/* --- SETTINGS TAB --- */}
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
             
@@ -981,7 +924,7 @@ export default function App() {
                   <RotateCcw className="w-4 h-4" /> 重置
                 </button>
                 <button onClick={saveSettings} className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm">
-                  <Save className="w-4 h-4" /> 儲存設定
+                  <Save className="w-4 h-4" /> 儲存設定到雲端
                 </button>
               </div>
             </div>
@@ -1111,7 +1054,7 @@ export default function App() {
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-yellow-50 p-2 rounded">
                 <Info className="w-4 h-4 mt-0.5 text-yellow-600" />
-                <p>修改此處匯率會影響**當前**和**未來**的計算。已儲存的歷史記錄**不受影響**。</p>
+                <p>匯率數據儲存在雲端。更改後請記得按 **儲存設定**。</p>
               </div>
             </Card>
 
