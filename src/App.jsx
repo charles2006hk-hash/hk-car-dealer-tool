@@ -1,17 +1,34 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2 } from 'lucide-react';
 
-// --- Firebase CDN Imports (已修正以解決構建錯誤) ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// --- Firebase Imports (使用標準模組路徑) ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from 'firebase/auth';
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
+
 
 // --- Global Constants & FRT Calculation ---
 
-// 檢查全局變數是否存在
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+// 🚨🚨🚨 請將以下 PLACEHOLDER 替換為您自己的 Firebase 專案配置 🚨🚨🚨
+// 這是手動配置區塊。如果您在 Canvas 環境之外運行，請將此處替換為您的實際 Firebase 配置。
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
+  authDomain: "hk-car-dealer-tool.firebaseapp.com",
+  projectId: "hk-car-dealer-tool",
+  storageBucket: "hk-car-dealer-tool.firebasestorage.app",
+  messagingSenderId: "53318644210",
+  appId: "1:53318644210:web:43a35553f825247c7cbb6b",
+  measurementId: "G-92FJL41BGT"
+};
+
+// 在 GitHub/本地模式下，我們直接使用硬編碼的配置
+const firebaseConfig = FIREBASE_CONFIG;
+// 在本地運行時，我們沒有 Canvas 注入的 Auth Token，因此強制為 null
+const initialAuthToken = null; 
+// 應用程式 ID，用於 Firestore 路徑，在本地模式下可以使用 Project ID
+const appId = FIREBASE_CONFIG.projectId || 'manual-app-id'; 
+// 🚨🚨🚨 配置替換結束 🚨🚨🚨
+
 
 // 在 HTML/React 應用中，請務必設定日誌級別，以便在控制台中查看 Firebase 狀態
 if (process.env.NODE_ENV !== 'production') {
@@ -87,9 +104,11 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   }, [value]);
 
   const filteredOptions = useMemo(() => {
-    if (!searchTerm) return options;
+    // 確保 options 是有效的陣列
+    const validOptions = Array.isArray(options) ? options : [];
+    if (!searchTerm) return validOptions;
     const lowerSearch = searchTerm.toLowerCase();
-    return options.filter(option => typeof option === 'string' && option.toLowerCase().includes(lowerSearch));
+    return validOptions.filter(option => typeof option === 'string' && option.toLowerCase().includes(lowerSearch));
   }, [searchTerm, options]);
 
   const handleSelect = useCallback((option) => {
@@ -227,7 +246,7 @@ export default function App() {
   // --- Settings UI State ---
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingManufacturer, setEditingManufacturer] = useState(null);
-  const [newModel, setNewModel] = { id: '', years: '', codes: '' };
+  const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' }); // 使用 useState
   
   // --- Status Message State ---
   const [saveStatus, setSaveStatus] = useState(null); // { message: string, type: 'success' | 'error' }
@@ -241,12 +260,19 @@ export default function App() {
 
   // --- Firebase Initialization and Authentication ---
   useEffect(() => {
-    if (firebaseConfig) {
+    // 檢查 firebaseConfig 是否已由用戶提供 (即使是在本地模式)
+    if (firebaseConfig && firebaseConfig.projectId && firebaseConfig.apiKey !== 'YOUR_API_KEY') {
       try {
         const app = initializeApp(firebaseConfig);
         const firestore = getFirestore(app);
         const authInstance = getAuth(app);
         
+        // --- FIX: 强制使用内存持久性以避免在沙盒环境中因本地存储被阻止而导致的錯誤 ---
+        setPersistence(authInstance, inMemoryPersistence).catch((e) => {
+            console.error("Failed to set in-memory persistence:", e);
+        });
+        // --- END FIX ---
+
         setDb(firestore);
         setAuth(authInstance);
 
@@ -255,7 +281,7 @@ export default function App() {
           if (user) {
             setUserId(user.uid);
           } else {
-            // Sign in anonymously if no token is available or user is signed out
+            // 在本地模式下，我們無法使用 custom token，因此直接使用匿名登入
             signInAnonymously(authInstance).then(res => {
               setUserId(res.user.uid);
             }).catch(e => {
@@ -266,21 +292,23 @@ export default function App() {
           setIsAuthReady(true);
         });
 
+        // 在本地模式下，initialAuthToken 會是 null，所以這個區塊會被跳過，直接進入 onAuthStateChanged 處理匿名登入
         if (initialAuthToken) {
            signInWithCustomToken(authInstance, initialAuthToken).catch(e => {
             console.warn("Custom token sign in failed, falling back to anonymous:", e);
-             // If custom token fails, onAuthStateChanged will handle the anonymous sign-in fallback.
            });
         }
         
         return () => unsubscribe();
       } catch (error) {
         console.error("Firebase initialization failed:", error);
+        showStatus('Firebase 初始化失敗，請檢查配置。', 'error');
       }
     } else {
       setIsAuthReady(true);
       setUserId(crypto.randomUUID()); // Use random ID for session mode if no config
-      console.warn("Running in non-persistent session mode. Refresh will clear data.");
+      console.warn("Running in non-persistent session mode. Please provide Firebase config.");
+      showStatus('未提供有效的 Firebase 配置。數據將在重新整理後清除。', 'error');
     }
   }, [initialAuthToken]); // Run only once on mount
 
@@ -315,7 +343,7 @@ export default function App() {
     }, (error) => {
       console.error("Error fetching history:", error);
       setIsHistoryLoading(false);
-      showStatus('無法加載歷史記錄，請檢查網路連接。', 'error');
+      showStatus('無法加載歷史記錄，請檢查網路連接或 Firestore 安全規則。', 'error');
     });
 
     return () => unsubscribe(); // Cleanup listener on unmount/dependency change
@@ -356,8 +384,7 @@ export default function App() {
 
   const resetSettings = () => {
     // Custom modal instead of window.confirm
-    const confirmed = window.confirm('確定要重置所有設定回預設值嗎？');
-    if(confirmed) {
+    if(window.confirm('確定要重置所有設定回預設值嗎？')) {
       setRates(DEFAULT_RATES);
       setDefaultFees(DEFAULT_FEES);
       setCarInventory(DEFAULT_INVENTORY);
@@ -471,8 +498,7 @@ export default function App() {
     if (!db || !userId) return;
 
     // Custom modal instead of window.confirm
-    const confirmed = window.confirm('確定要刪除這條記錄嗎？刪除後無法復原。');
-    if (confirmed) {
+    if (window.confirm('確定要刪除這條記錄嗎？刪除後無法復原。')) {
       try {
         const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
         await deleteDoc(historyDocRef);
@@ -513,8 +539,7 @@ export default function App() {
 
   const handleDeleteManufacturer = (mfrName) => {
     // Custom modal instead of window.confirm
-    const confirmed = window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`);
-    if (confirmed) {
+    if (window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`)) {
       setCarInventory(prev => {
         const { [mfrName]: _, ...rest } = prev;
         return rest;
@@ -545,8 +570,7 @@ export default function App() {
 
   const handleDeleteModel = (mfrName, modelId) => {
     // Custom modal instead of window.confirm
-    const confirmed = window.confirm(`確定要刪除型號 "${modelId}" 嗎？`);
-    if (confirmed) {
+    if (window.confirm(`確定要刪除型號 "${modelId}" 嗎？`)) {
       setCarInventory(prev => ({
         ...prev,
         [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
@@ -567,7 +591,8 @@ export default function App() {
 
   let totalOriginFeesNative = 0;
   // Sum native origin fees, ensuring each fee value is treated as a number
-  Object.values(currentOriginFees).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
+  // Object.values(currentOriginFees || {}) - 確保在 TypeError 發生時能安全迭代
+  Object.values(currentOriginFees || {}).forEach(fee => { totalOriginFeesNative += parseFloat(fee.val) || 0; });
   const totalOriginFeesHKD = totalOriginFeesNative * currentRate;
 
   // Ensure PRP is treated as a number
@@ -576,7 +601,8 @@ export default function App() {
 
   let totalHKFeesWithoutFRT = 0;
   // Sum local HK fees, ensuring each fee value is treated as a number
-  Object.values(currentHKFees).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
+  // Object.values(currentHKFees || {}) - 確保在 TypeError 發生時能安全迭代
+  Object.values(currentHKFees || {}).forEach(fee => { totalHKFeesWithoutFRT += parseFloat(fee.val) || 0; });
 
   const totalHKFees = totalHKFeesWithoutFRT + calculatedFRT;
   const grandTotal = carPriceHKD + totalOriginFeesHKD + totalHKFees;
@@ -760,7 +786,8 @@ export default function App() {
               <Card className="p-4">
                 <SectionHeader icon={Globe} title={`當地雜費 (${currentCurrency.currency})`} color="text-indigo-600" />
                 <div className="space-y-2">
-                  {Object.entries(currentOriginFees).map(([key, item]) => (
+                  {/* FIX: 增加 || {} 確保 currentOriginFees 是可迭代的物件 */}
+                  {Object.entries(currentOriginFees || {}).map(([key, item]) => (
                     <InputGroup
                       key={key}
                       label={item.label}
@@ -782,7 +809,8 @@ export default function App() {
                 <SectionHeader icon={Ship} title="香港本地雜費及首次登記稅 (HKD)" color="text-green-600" />
                 <div className="space-y-2">
                   {/* 可編輯的香港費用 */}
-                  {Object.entries(currentHKFees).map(([key, item]) => (
+                  {/* FIX: 增加 || {} 確保 currentHKFees 是可迭代的物件 */}
+                  {Object.entries(currentHKFees || {}).map(([key, item]) => (
                     <InputGroup
                       key={key}
                       label={item.label}
@@ -1001,7 +1029,8 @@ export default function App() {
 
               {/* List Manufacturers */}
               <div className="space-y-4">
-                {Object.entries(carInventory).map(([mfrName, data]) => (
+                {/* FIX: 確保 carInventory 是物件才能使用 Object.entries */}
+                {Object.entries(carInventory || {}).map(([mfrName, data]) => (
                   <div key={mfrName} className="border rounded-lg overflow-hidden">
                     <div 
                       className="flex justify-between items-center p-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
@@ -1055,7 +1084,7 @@ export default function App() {
                         </div>
                         
                         {/* Existing Models List */}
-                        {data.models.map(model => (
+                        {(data.models || []).map(model => ( // 確保 models 是陣列
                           <div key={model.id} className="flex justify-between items-start border-b pb-2 text-sm last:border-b-0 last:pb-0">
                             <div>
                                 <div className="font-medium text-gray-800">{model.id}</div>
@@ -1068,7 +1097,7 @@ export default function App() {
                             </button>
                           </div>
                         ))}
-                        {data.models.length === 0 && <p className="text-center text-gray-400 text-sm py-2">無型號</p>}
+                        {(data.models || []).length === 0 && <p className="text-center text-gray-400 text-sm py-2">無型號</p>}
                       </div>
                     )}
                   </div>
@@ -1116,15 +1145,12 @@ export default function App() {
                       <h4 className="font-medium text-gray-700 mb-3 text-sm flex items-center gap-2">
                          當地貨幣 ({c.currency})
                       </h4>
-                      {Object.entries(defaultFees[c.id].origin).map(([key, item]) => (
+                      {/* FIX: 使用 ?. 和 || {} 確保結構存在 */}
+                      {Object.entries(defaultFees[c.id]?.origin || {}).map(([key, item]) => (
                         <div key={key} className="flex items-center gap-2 mb-2">
                           <div className="flex-1">
-                             <input 
-                               type="text" 
-                               value={item.label}
-                               className="w-full text-xs border-b border-transparent bg-transparent focus:border-blue-500 focus:outline-none"
-                               readOnly 
-                             />
+                             {/* 使用 Autocomplete/InputGroup 避免複雜的內聯編輯，這裡保持為只讀標籤 */}
+                             <span className='text-sm text-gray-700'>{item.label}</span>
                           </div>
                           <div className="w-32">
                             <InputGroup
@@ -1143,19 +1169,23 @@ export default function App() {
                        <h4 className="font-medium text-blue-800 mb-3 text-sm">
                          香港固定費用 (HKD)
                        </h4>
-                       {Object.entries(defaultFees[c.id].hk).map(([key, item]) => (
-                        <div key={key} className="flex items-center gap-2 mb-2">
-                          <span className="text-xs text-gray-600 flex-1">{item.label}</span>
+                       {/* FIX: 使用 ?. 和 || {} 確保結構存在 */}
+                       {Object.entries(defaultFees[c.id]?.hk || {}).map(([key, item]) => (
+                         <div key={key} className="flex items-center gap-2 mb-2">
+                          <div className="flex-1">
+                             <span className='text-sm text-blue-800'>{item.label}</span>
+                          </div>
                           <div className="w-32">
                             <InputGroup
                               label=""
                               value={item.val}
                               onChange={(val) => handleDefaultFeeChange(c.id, 'hk', key, val)}
                               min={0}
+                              prefix='$'
                             />
                           </div>
                         </div>
-                      ))}
+                       ))}
                     </div>
                   </div>
                 </div>
