@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
 
-// --- Firebase Imports (已修復: 使用 CDN 模組路徑來避免 Rollup/Vite 無法解析的問題) ---
+// --- Firebase Imports (已修復: 確保所有Auth相關函數, 包含 setPersistence & inMemoryPersistence) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, collection, query, onSnapshot, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 
@@ -235,9 +235,21 @@ export default function App() {
 
   // --- 1. Firebase Initialization and Authentication ---
   useEffect(() => {
-    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    let firebaseConfig = {};
+    try {
+        // 嘗試解析全局變數
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            firebaseConfig = JSON.parse(__firebase_config);
+        }
+    } catch (e) {
+        console.error("Failed to parse __firebase_config JSON:", e);
+    }
+    
     if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
+        // 這是您看到的第一個錯誤，通常在環境初始化時發生
         console.error("Firebase config is missing or invalid. Cannot initialize.");
+        setIsLoading(false);
+        setIsAuthReady(false);
         return;
     }
 
@@ -246,27 +258,42 @@ export default function App() {
     const firestore = getFirestore(app);
     setDb(firestore);
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            setUserId(user.uid);
-        } else {
-            // Attempt to sign in using custom token or anonymously
-            try {
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Firebase sign-in failed:", error);
-                // Fallback to anonymous sign-in if custom token fails
-                await signInAnonymously(auth);
-            }
-        }
-        setIsAuthReady(true);
-    });
+    // 解決 'Access to storage is not allowed' 錯誤：設定為 In-Memory 持久化
+    const initializeAuth = async () => {
+        try {
+            // 必須在登入前設定持久化，否則 Firebase 會嘗試使用 localStorage/indexedDB
+            await setPersistence(auth, inMemoryPersistence);
 
-    return () => unsubscribe();
+            const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                } else {
+                    // 嘗試使用自定義 Token 或匿名登入
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Firebase sign-in failed (fallback to anonymous):", error);
+                        // 即使 custom token 失敗，仍嘗試匿名登入
+                        await signInAnonymously(auth);
+                    }
+                }
+                setIsAuthReady(true);
+            });
+            return () => unsubscribe();
+        } catch (error) {
+            console.error("Auth Persistence Setup Failed:", error);
+            setIsAuthReady(false);
+            setIsLoading(false);
+        }
+    };
+
+    const cleanup = initializeAuth();
+    return () => cleanup && cleanup();
+    
   }, []);
 
   // --- Firestore Reference Helpers ---
@@ -414,12 +441,15 @@ export default function App() {
   const saveToHistory = async () => {
     
     // --- Pre-check: Ensure critical fields are non-zero ---
+    const carPriceVal = parseFloat(carPrice) || 0;
+    const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
+    
     if (carPriceVal <= 0 || approvedRetailPriceVal <= 0) {
-        return showStatus('請輸入有效的車價及PRP以進行記錄!', 'error');
+        return showStatus('請輸入有效的車價及PRP以進行記錄', 'error');
     }
     
     if (grandTotal <= 0) {
-      return showStatus('總成本計算結果為零或無效!', 'error');
+      return showStatus('總成本計算結果為零或無效', 'error');
     }
 
     const historyCollectionRef = getHistoryCollectionRef();
@@ -596,6 +626,11 @@ export default function App() {
         <div className="flex flex-col items-center bg-white p-8 rounded-xl shadow-lg">
           <Loader className="w-8 h-8 animate-spin text-blue-600 mb-4" />
           <p className="text-gray-700 font-medium">正在連接至雲端數據庫...</p>
+          {(!isAuthReady || !db) && (
+             <p className="text-xs text-red-400 mt-2 text-center">
+                 初始化中... 若卡住請檢查控制台是否有 'Firebase config is missing' 錯誤。
+             </p>
+          )}
           <p className="text-xs text-gray-400 mt-1">請稍候</p>
         </div>
       </div>
