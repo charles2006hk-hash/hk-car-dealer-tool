@@ -3,6 +3,7 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 
 // --- Firebase CDN Imports (使用 CDN URL 解決 Rollup/Vite 模組解析錯誤) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+// 引入 inMemoryPersistence 和 setPersistence 來解決 iFrame/沙盒環境的存儲訪問錯誤
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -245,68 +246,82 @@ export default function App() {
   }, []); // appId is already defined globally
 
 
-  // --- Firebase Initialization and Authentication ---
+  // --- Firebase Initialization and Authentication (Refactored for strict sequencing) ---
   useEffect(() => {
-    // 檢查 Canvas 變數是否已注入有效的配置
-    if (firebaseConfig && firebaseConfig.projectId) {
+    
+    // Helper function to handle async initialization
+    const initFirebase = async () => {
+      // 1. Initialize core services
+      const app = initializeApp(firebaseConfig);
+      const firestore = getFirestore(app);
+      const authInstance = getAuth(app);
+      
+      let unsubscribeAuth = () => {};
+
       try {
-        // 確保 initializeApp 只使用 Canvas 注入的配置
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const authInstance = getAuth(app);
+        // 🚨 CRITICAL FIX: Set persistence FIRST and wait for it to ensure it takes effect 
+        // before any sign-in attempt (including listener startup) tries to access storage.
+        await setPersistence(authInstance, inMemoryPersistence);
+        console.log("Firebase Auth Persistence set to in-memory.");
+
+        // 2. Auth attempt using custom token if available, or anonymous sign-in
+        if (initialAuthToken) {
+           await signInWithCustomToken(authInstance, initialAuthToken);
+           console.log("Firebase Auth: Signed in with custom token.");
+        } else {
+           // Fallback to anonymous sign-in if no custom token provided
+           const userCredential = await signInAnonymously(authInstance);
+           console.log("Firebase Auth: Signed in anonymously as", userCredential.user.uid);
+        }
         
-        // 2. 🚨 設置身份驗證持久性為 inMemoryPersistence 🚨
-        setPersistence(authInstance, inMemoryPersistence).catch((e) => {
-            console.error("Failed to set in-memory persistence:", e);
+        // 3. Set up the Auth State Listener
+        unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                // If user somehow signs out, we may retry anonymous sign-in or treat as guest
+                setUserId('guest-' + crypto.randomUUID()); 
+            }
+            setIsAuthReady(true);
         });
 
+        // 4. Set state for use in other effects
         setDb(firestore);
         setAuth(authInstance);
 
-        const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-          if (user) {
-            setUserId(user.uid);
-            console.log("Firebase Auth State Changed: Logged in as", user.uid);
-          } else {
-            // 如果沒有登入，且沒有自定義 token，則使用匿名登入
-            signInAnonymously(authInstance).then(res => {
-              setUserId(res.user.uid);
-              console.log("Firebase Auth: Signed in anonymously as", res.user.uid);
-            }).catch(e => {
-              console.error("Anonymous sign in failed:", e);
-              setUserId('guest-' + crypto.randomUUID()); // Fallback identifier
-            });
-          }
-          setIsAuthReady(true);
-        });
-
-        // 如果 Canvas 注入了自定義 token，則使用它登入
-        if (initialAuthToken) {
-           signInWithCustomToken(authInstance, initialAuthToken).then(userCredential => {
-             console.log("Firebase Auth: Signed in with custom token.");
-           }).catch(e => {
-            console.warn("Custom token sign in failed, falling back to onAuthStateChanged handler:", e);
-           });
-        }
-        
-        return () => unsubscribe();
       } catch (error) {
-        console.error("Firebase initialization failed:", error);
-        showStatus('Firebase 初始化失敗，請檢查配置。', 'error');
+        console.error("Firebase initialization or sign-in failed:", error);
+        showStatus('Firebase 初始化失敗或登入錯誤，請檢查配置。', 'error');
+        setIsAuthReady(true); // Mark ready to avoid infinite loading, but with guest ID
+        setUserId('init-error-' + crypto.randomUUID()); 
       }
+      
+      return unsubscribeAuth; // Return the cleanup function
+    };
+
+    // Check if Canvas variables are provided
+    if (firebaseConfig && firebaseConfig.projectId) {
+      // Run the async initialization and capture the cleanup function
+      const cleanupPromise = initFirebase();
+      return () => {
+        cleanupPromise.then(unsubscribe => {
+          if (typeof unsubscribe === 'function') unsubscribe();
+        });
+      };
     } else {
-      // 本地/會話模式（如果沒有提供 Canvas 變數）
+      // Local/Session Mode (Fallback if no Canvas variables)
       setIsAuthReady(true);
       setUserId('session-' + crypto.randomUUID()); 
       console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
       showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
     }
+    
   }, [initialAuthToken]); // Run only once on mount
 
   // --- Firestore History Listener (onSnapshot) ---
   useEffect(() => {
     // 3. 🚨 確保所有 Firestore 操作都在身份驗證就緒後執行 🚨
-    if (!isAuthReady || !db || !userId) return; 
+    if (!isAuthReady || !db || !userId || userId.startsWith('session') || userId.startsWith('init-error')) return; 
 
     const historyRef = getHistoryCollectionRef(db, userId);
     
@@ -323,9 +338,9 @@ export default function App() {
 
       // Local sorting by date (descending)
       fetchedHistory.sort((a, b) => {
-          const dateA = a.date || ''; 
-          const dateB = b.date || '';
-          return dateB.localeCompare(dateA);
+          const dateA = a.timestamp || ''; 
+          const dateB = b.timestamp || '';
+          return dateB.localeCompare(dateA); // Sort by ISO timestamp
       });
       
       setHistory(fetchedHistory);
@@ -419,8 +434,8 @@ export default function App() {
 
 
   const saveToHistory = async () => {
-    if (!isFirebaseConnected || !userId) {
-        return showStatus('數據庫尚未連接或用戶未驗證，請稍候...', 'error');
+    if (!isFirebaseConnected || !userId || userId.startsWith('session') || userId.startsWith('init-error')) {
+        return showStatus('數據庫尚未連接或用戶未驗證，無法儲存。', 'error');
     }
     
     // --- Pre-check: Ensure critical fields are non-zero ---
@@ -445,7 +460,7 @@ export default function App() {
 
     const newRecordContent = {
       date: formattedDate,
-      timestamp: now.toISOString(), // Use ISO string for consistent sorting in Firestore (if needed)
+      timestamp: now.toISOString(), // Use ISO string for consistent sorting/indexing
       countryId: selectedCountry,
       isLocked: false, 
       
@@ -758,7 +773,7 @@ export default function App() {
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">記錄</span>
               <span className="sm:hidden">記錄 ({history.length})</span>
-               {isHistoryLoading && <Loader2 className="w-4 h-4 animate-spin absolute right-0 top-0 m-0.5 text-yellow-400" />}
+               {isHistoryLoading && isFirebaseConnected && <Loader2 className="w-4 h-4 animate-spin absolute right-0 top-0 m-0.5 text-yellow-400" />}
             </button>
             <button 
               onClick={() => setActiveTab('settings')}
@@ -972,7 +987,7 @@ export default function App() {
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
 
-            {isHistoryLoading ? (
+            {isHistoryLoading && isFirebaseConnected ? (
                <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 flex flex-col items-center">
                  <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-4 animate-spin" />
                  <p className="text-gray-400">正在加載歷史記錄...</p>
@@ -1058,7 +1073,7 @@ export default function App() {
                       </div>
                        <div>
                         <div className="font-medium text-red-600">首次登記稅 (FRT)</div>
-                        <div className='text-red-600'>{fmtMoney(item.calculations.calculatedFRT)}</div>
+                        <div className='text-red-600'>{fmtMoney(item.inputValues.approvedRetailPrice > 0 ? item.calculations.calculatedFRT : 0)}</div>
                         <div className='text-gray-400'>(PRP {fmtMoney(item.inputValues.approvedRetailPrice)})</div>
                       </div>
                     </div>
