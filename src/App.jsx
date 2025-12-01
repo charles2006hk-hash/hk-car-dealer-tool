@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X } from 'lucide-react';
 
 // --- Default Data & Configuration ---
 
@@ -15,7 +15,7 @@ const COUNTRIES = {
   DE: { id: 'DE', name: '德國 (Germany)', currency: 'EUR', symbol: '€' },
 };
 
-// Default Fees Structure
+// Default Fees Structure (Unchanged)
 const DEFAULT_FEES = {
   JP: {
     origin: {
@@ -61,6 +61,23 @@ const DEFAULT_FEES = {
   }
 };
 
+// 新增預設庫存資料
+const DEFAULT_INVENTORY = {
+  Toyota: {
+    models: [
+      { id: 'Alphard', years: ['2023', '2022', '2021'], codes: ['AH30', 'AH40'] },
+      { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] },
+    ]
+  },
+  Honda: {
+    models: [
+      { id: 'Stepwgn', years: ['2024', '2022'], codes: ['RP6', 'RK5'] },
+      { id: 'Vezel', years: ['2023', '2020'], codes: ['RV3', 'RU1'] },
+    ]
+  },
+  BMW: { models: [] },
+};
+
 // --- Components ---
 
 const Card = ({ children, className = "" }) => (
@@ -76,6 +93,99 @@ const SectionHeader = ({ icon: Icon, title, color = "text-gray-800" }) => (
   </div>
 );
 
+// Autocomplete Input Component
+const AutocompleteInput = ({ label, value, onChange, options = [], disabled = false, placeholder = "輸入或選擇" }) => {
+  const [searchTerm, setSearchTerm] = useState(value || '');
+  const [isOpen, setIsOpen] = useState(false);
+  
+  // 當父元件 value 變更時，更新內部 searchTerm
+  useEffect(() => {
+    setSearchTerm(value || '');
+  }, [value]);
+
+  // 過濾選項：不區分大小寫，只匹配英文部分 (或全字匹配)
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm) return options;
+    const lowerSearch = searchTerm.toLowerCase();
+    
+    return options.filter(option => 
+      // 確保 option 是字串
+      typeof option === 'string' && option.toLowerCase().includes(lowerSearch)
+    );
+  }, [searchTerm, options]);
+
+  const handleSelect = useCallback((option) => {
+    setSearchTerm(option);
+    onChange(option);
+    setIsOpen(false);
+  }, [onChange]);
+
+  const handleInputChange = (e) => {
+    const newVal = e.target.value;
+    setSearchTerm(newVal);
+    setIsOpen(true);
+    // 允許用戶輸入不在列表中的值
+    onChange(newVal); 
+  };
+  
+  const handleClear = () => {
+      setSearchTerm('');
+      onChange('');
+      setIsOpen(false);
+  };
+
+  return (
+    <div className="mb-3 relative">
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <div className="relative">
+        <input
+          type="text"
+          className={`focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 pl-3 pr-8 ${disabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
+          placeholder={placeholder}
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={() => setIsOpen(true)}
+          disabled={disabled}
+        />
+        
+        {searchTerm && (
+          <button 
+            type="button"
+            onClick={handleClear}
+            className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-red-500"
+            disabled={disabled}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+        
+        {!searchTerm && (
+          <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
+        )}
+      </div>
+
+      {(isOpen && filteredOptions.length > 0 && !disabled) && (
+        <ul className="absolute z-30 w-full mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-md shadow-lg">
+          {filteredOptions.slice(0, 10).map((option, index) => (
+            <li
+              key={index}
+              className="px-3 py-2 text-sm text-gray-700 cursor-pointer hover:bg-blue-50 hover:text-blue-600"
+              onClick={() => handleSelect(option)}
+            >
+              {option}
+            </li>
+          ))}
+          {filteredOptions.length > 10 && (
+            <li className="px-3 py-1 text-xs text-gray-400 border-t">顯示前 10 項...</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+
+// Simple Number/Text Input Group
 const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1", placeholder = "" }) => (
   <div className="mb-3">
     <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
@@ -97,6 +207,9 @@ const InputGroup = ({ label, value, onChange, prefix, type = "number", step = "1
   </div>
 );
 
+
+// --- Main App Component ---
+
 export default function App() {
   // --- State ---
   const [activeTab, setActiveTab] = useState('calculator'); // 'calculator' | 'settings' | 'history'
@@ -105,15 +218,17 @@ export default function App() {
   // Settings State (Persisted)
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [defaultFees, setDefaultFees] = useState(DEFAULT_FEES);
+  // 新增：車輛庫存
+  const [carInventory, setCarInventory] = useState(DEFAULT_INVENTORY); 
 
   // Calculator State (Temporary)
   const [carPrice, setCarPrice] = useState('');
   const [currentOriginFees, setCurrentOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currentHKFees, setCurrentHKFees] = useState(DEFAULT_FEES['JP'].hk);
   
-  // New Car Details State
+  // Car Details State (stores selected string values)
   const [carDetails, setCarDetails] = useState({
-    make: '',
+    manufacturer: '',
     model: '',
     year: '',
     code: ''
@@ -121,16 +236,25 @@ export default function App() {
 
   // History State
   const [history, setHistory] = useState([]);
+  
+  // Settings UI State
+  const [newManufacturer, setNewManufacturer] = useState('');
+  const [editingManufacturer, setEditingManufacturer] = useState(null);
+  const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
+
 
   // Load settings & history from local storage on mount
   useEffect(() => {
     const savedRates = localStorage.getItem('hkCarDealer_rates');
     const savedFees = localStorage.getItem('hkCarDealer_fees');
     const savedHistory = localStorage.getItem('hkCarDealer_history');
+    const savedInventory = localStorage.getItem('hkCarDealer_inventory');
 
     if (savedRates) setRates(JSON.parse(savedRates));
     if (savedFees) setDefaultFees(JSON.parse(savedFees));
     if (savedHistory) setHistory(JSON.parse(savedHistory));
+    // 載入庫存
+    if (savedInventory) setCarInventory(JSON.parse(savedInventory));
   }, []);
 
   // When country changes, reset fees to defaults but KEEP car details
@@ -144,22 +268,30 @@ export default function App() {
   const saveSettings = () => {
     localStorage.setItem('hkCarDealer_rates', JSON.stringify(rates));
     localStorage.setItem('hkCarDealer_fees', JSON.stringify(defaultFees));
-    alert('設定已儲存！');
+    // 儲存庫存
+    localStorage.setItem('hkCarDealer_inventory', JSON.stringify(carInventory));
+    
+    console.log('設定已儲存！');
   };
 
   const resetSettings = () => {
     if(window.confirm('確定要重置所有設定回預設值嗎？')) {
       setRates(DEFAULT_RATES);
       setDefaultFees(DEFAULT_FEES);
+      setCarInventory(DEFAULT_INVENTORY); // 重置庫存
       localStorage.removeItem('hkCarDealer_rates');
       localStorage.removeItem('hkCarDealer_fees');
+      localStorage.removeItem('hkCarDealer_inventory');
+      
+      setCurrentOriginFees(DEFAULT_FEES[selectedCountry].origin);
+      setCurrentHKFees(DEFAULT_FEES[selectedCountry].hk);
     }
   };
 
   // --- Calculations ---
   
   const currentCurrency = COUNTRIES[selectedCountry];
-  const currentRate = rates[selectedCountry];
+  const currentRate = rates[selectedCountry] || 0; // Guard against undefined rate
 
   // 1. Car Cost in HKD
   const carPriceVal = parseFloat(carPrice) || 0;
@@ -183,15 +315,134 @@ export default function App() {
 
   // Formatters
   const fmtMoney = (amount, currency = 'HKD') => {
+    // Check if amount is valid number
+    if (isNaN(amount) || amount === null) return 'N/A';
     return new Intl.NumberFormat('zh-HK', { style: 'currency', currency: currency, maximumFractionDigits: 0 }).format(amount);
   };
 
   // --- Handlers ---
 
   const handleCarDetailChange = (field, value) => {
-    setCarDetails(prev => ({ ...prev, [field]: value }));
+    setCarDetails(prev => {
+      const newDetails = { ...prev, [field]: value };
+      
+      // Reset dependent fields if parent field changes
+      if (field === 'manufacturer' && prev.manufacturer !== value) {
+        newDetails.model = '';
+        newDetails.year = '';
+        newDetails.code = '';
+      } else if (field === 'model' && prev.model !== value) {
+        newDetails.year = '';
+        newDetails.code = '';
+      } else if (field === 'year' && prev.year !== value) {
+        newDetails.code = '';
+      }
+      return newDetails;
+    });
   };
 
+  // --- Inventory Logic ---
+
+  // Manufacturer (Mfr) Options
+  const manufacturerOptions = useMemo(() => Object.keys(carInventory), [carInventory]);
+
+  // Model Options (depends on selected Manufacturer)
+  const modelOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    return mfrData ? mfrData.models.map(m => m.id) : [];
+  }, [carInventory, carDetails.manufacturer]);
+
+  // Year Options (depends on selected Model)
+  const yearOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    if (!mfrData) return [];
+    const modelData = mfrData.models.find(m => m.id === carDetails.model);
+    return modelData ? modelData.years : [];
+  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+
+  // Code Options (depends on selected Model)
+  const codeOptions = useMemo(() => {
+    const mfrData = carInventory[carDetails.manufacturer];
+    if (!mfrData) return [];
+    const modelData = mfrData.models.find(m => m.id === carDetails.model);
+    return modelData ? modelData.codes : [];
+  }, [carInventory, carDetails.manufacturer, carDetails.model]);
+
+  // --- Settings Inventory Management Handlers ---
+
+  const handleAddManufacturer = () => {
+    const name = newManufacturer.trim();
+    if (!name || carInventory[name]) {
+      console.log('製造商名稱無效或已存在。');
+      return;
+    }
+    setCarInventory(prev => ({
+      ...prev,
+      [name]: { models: [] }
+    }));
+    setNewManufacturer('');
+    saveSettings(); // Auto-save after action
+  };
+
+  const handleDeleteManufacturer = (mfrName) => {
+    if (window.confirm(`確定要刪除製造商 "${mfrName}" 及其所有車型嗎？`)) {
+      setCarInventory(prev => {
+        const { [mfrName]: _, ...rest } = prev;
+        return rest;
+      });
+      setEditingManufacturer(null);
+      saveSettings();
+    }
+  };
+  
+  const handleAddModel = (mfrName) => {
+    const modelId = newModel.id.trim();
+    if (!modelId || !carInventory[mfrName]) {
+      console.log('型號名稱無效。');
+      return;
+    }
+
+    const yearsArray = newModel.years.split(',').map(s => s.trim()).filter(s => s);
+    const codesArray = newModel.codes.split(',').map(s => s.trim()).filter(s => s);
+
+    // Check if model already exists
+    if (carInventory[mfrName].models.some(m => m.id === modelId)) {
+        console.log('該型號已存在。');
+        return;
+    }
+
+    const newCar = {
+      id: modelId,
+      years: yearsArray,
+      codes: codesArray,
+    };
+
+    setCarInventory(prev => ({
+      ...prev,
+      [mfrName]: {
+        ...prev[mfrName],
+        models: [...prev[mfrName].models, newCar]
+      }
+    }));
+    setNewModel({ id: '', years: '', codes: '' });
+    saveSettings();
+  };
+
+  const handleDeleteModel = (mfrName, modelId) => {
+    if (window.confirm(`確定要刪除型號 "${modelId}" 嗎？`)) {
+      setCarInventory(prev => ({
+        ...prev,
+        [mfrName]: {
+          ...prev[mfrName],
+          models: prev[mfrName].models.filter(m => m.id !== modelId)
+        }
+      }));
+      saveSettings();
+    }
+  };
+
+  // --- Other Handlers (Fees/Rates) ---
+  
   const handleOriginFeeChange = (key, value) => {
     setCurrentOriginFees(prev => ({
       ...prev,
@@ -225,15 +476,16 @@ export default function App() {
 
   const saveToHistory = () => {
     if (grandTotal === 0) {
-      alert('估算總額為 0，無法儲存。');
+      console.log('估算總額為 0，無法儲存。');
       return;
     }
 
     const newRecord = {
       id: Date.now(),
-      date: new Date().toLocaleString('zh-HK'),
+      date: new Date().toLocaleString('zh-HK', { timeZone: 'Asia/Hono_Kong' }),
       countryId: selectedCountry,
-      carDetails: { ...carDetails },
+      // 儲存選定的車輛資料
+      carDetails: { ...carDetails }, 
       calculations: {
         rate: currentRate,
         carPriceNative: carPriceVal,
@@ -248,10 +500,8 @@ export default function App() {
     setHistory(updatedHistory);
     localStorage.setItem('hkCarDealer_history', JSON.stringify(updatedHistory));
     
-    // Optional: Clear form or give feedback
-    if(window.confirm('已儲存至記錄！是否查看記錄？')) {
-        setActiveTab('history');
-    }
+    console.log('記錄已儲存。');
+    setActiveTab('history');
   };
 
   const deleteHistoryItem = (id) => {
@@ -266,7 +516,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-20">
       
       {/* Header */}
-      <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-10">
+      <div className="bg-blue-900 text-white p-4 shadow-md sticky top-0 z-40"> {/* Z-index bumped for autocomplete */}
         <div className="max-w-3xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Truck className="w-6 h-6 text-blue-300" />
@@ -322,41 +572,48 @@ export default function App() {
               ))}
             </div>
 
-            {/* Car Details Form */}
+            {/* Car Details Form - Using Autocomplete */}
             <Card className="p-5">
               <SectionHeader icon={Car} title="車輛資料 (可選填)" color="text-gray-600" />
               <div className="grid grid-cols-2 gap-4">
-                <InputGroup 
+                
+                {/* 1. Manufacturer */}
+                <AutocompleteInput 
                   label="製造商 (Manufacturer)" 
-                  type="text" 
                   placeholder="e.g. Toyota" 
-                  value={carDetails.make} 
-                  onChange={(v) => handleCarDetailChange('make', v)} 
-                  prefix=""
+                  value={carDetails.manufacturer}
+                  onChange={(v) => handleCarDetailChange('manufacturer', v)}
+                  options={manufacturerOptions}
                 />
-                <InputGroup 
+                
+                {/* 2. Model (Disabled if no Manufacturer selected) */}
+                <AutocompleteInput 
                   label="型號 (Model)" 
-                  type="text" 
                   placeholder="e.g. Alphard" 
-                  value={carDetails.model} 
-                  onChange={(v) => handleCarDetailChange('model', v)} 
-                  prefix=""
+                  value={carDetails.model}
+                  onChange={(v) => handleCarDetailChange('model', v)}
+                  options={modelOptions}
+                  disabled={!carDetails.manufacturer}
                 />
-                <InputGroup 
+                
+                {/* 3. Year (Disabled if no Model selected) */}
+                <AutocompleteInput 
                   label="製造年份 (Year)" 
-                  type="text" 
                   placeholder="e.g. 2023" 
-                  value={carDetails.year} 
-                  onChange={(v) => handleCarDetailChange('year', v)} 
-                  prefix=""
+                  value={carDetails.year}
+                  onChange={(v) => handleCarDetailChange('year', v)}
+                  options={yearOptions}
+                  disabled={!carDetails.model}
                 />
-                <InputGroup 
+                
+                {/* 4. Code (Disabled if no Model selected) */}
+                <AutocompleteInput 
                   label="型號代碼 (Model Code)" 
-                  type="text" 
                   placeholder="e.g. AGH30" 
-                  value={carDetails.code} 
-                  onChange={(v) => handleCarDetailChange('code', v)} 
-                  prefix=""
+                  value={carDetails.code}
+                  onChange={(v) => handleCarDetailChange('code', v)}
+                  options={codeOptions}
+                  disabled={!carDetails.model}
                 />
               </div>
             </Card>
@@ -422,7 +679,7 @@ export default function App() {
             </div>
 
             {/* Grand Total Bar */}
-            <div className="sticky bottom-4 bg-gray-900 text-white p-4 rounded-2xl shadow-xl z-20">
+            <div className="sticky bottom-0 bg-gray-900 text-white p-4 rounded-2xl shadow-xl z-20">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex-1">
                   <div className="flex justify-between items-center mb-1">
@@ -452,7 +709,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- HISTORY TAB --- */}
+        {/* --- HISTORY TAB (Unchanged) --- */}
         {activeTab === 'history' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
              <div className="flex justify-between items-center">
@@ -492,7 +749,7 @@ export default function App() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <div className="text-lg font-bold text-gray-800 mb-1">
-                          {item.carDetails.make || '---'} {item.carDetails.model}
+                          {item.carDetails.manufacturer} {item.carDetails.model}
                         </div>
                         <div className="text-sm text-gray-500 flex gap-3">
                           <span className="bg-gray-100 px-2 py-0.5 rounded">{item.carDetails.year || '年份?'}</span>
@@ -545,6 +802,116 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* Car Inventory Management */}
+            <Card className="p-5 border-l-4 border-l-blue-600">
+              <SectionHeader icon={Car} title="車輛庫存管理 (Car Inventory)" color="text-blue-600" />
+              
+              {/* Add New Manufacturer */}
+              <div className="border-b pb-4 mb-4">
+                <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-1">
+                    <PlusCircle className="w-4 h-4" /> 新增製造商 (Manufacturer)
+                </h4>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="輸入製造商名稱 (e.g. Mercedes-Benz)"
+                    value={newManufacturer}
+                    onChange={(e) => setNewManufacturer(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                  <button 
+                    onClick={handleAddManufacturer} 
+                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm disabled:opacity-50"
+                    disabled={!newManufacturer.trim()}
+                  >
+                    新增
+                  </button>
+                </div>
+              </div>
+
+              {/* List Manufacturers */}
+              <div className="space-y-4">
+                {Object.entries(carInventory).map(([mfrName, data]) => (
+                  <div key={mfrName} className="border rounded-lg overflow-hidden">
+                    <div 
+                      className="flex justify-between items-center p-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
+                      onClick={() => setEditingManufacturer(mfrName === editingManufacturer ? null : mfrName)}
+                    >
+                      <span className="font-bold text-gray-800">{mfrName} ({data.models.length} 型號)</span>
+                      <div className='flex items-center gap-2'>
+                          <Trash2 
+                              className="w-4 h-4 text-red-400 hover:text-red-600 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteManufacturer(mfrName); }}
+                          />
+                          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${mfrName === editingManufacturer ? 'rotate-180' : 'rotate-0'}`} />
+                      </div>
+                    </div>
+
+                    {/* Model Management Sub-Panel */}
+                    {mfrName === editingManufacturer && (
+                      <div className="p-4 bg-white border-t space-y-4">
+                        <h5 className="font-semibold text-sm mb-2">管理 {mfrName} 的型號</h5>
+                        
+                        {/* Add New Model Form */}
+                        <div className="bg-blue-50 p-3 rounded-md border border-blue-100">
+                           <h6 className="text-xs font-bold text-blue-700 mb-2">新增型號</h6>
+                           <div className="grid grid-cols-1 gap-2">
+                             <input
+                                placeholder="型號名稱 (e.g. Sienta)"
+                                value={newModel.id}
+                                onChange={(e) => setNewModel(prev => ({ ...prev, id: e.target.value }))}
+                                className="px-3 py-1 border rounded-md text-sm"
+                             />
+                             <input
+                                placeholder="年份 (e.g. 2023, 2022)"
+                                value={newModel.years}
+                                onChange={(e) => setNewModel(prev => ({ ...prev, years: e.target.value }))}
+                                className="px-3 py-1 border rounded-md text-sm"
+                             />
+                             <input
+                                placeholder="代碼 (e.g. NSP170, XP170)"
+                                value={newModel.codes}
+                                onChange={(e) => setNewModel(prev => ({ ...prev, codes: e.target.value }))}
+                                className="px-3 py-1 border rounded-md text-sm"
+                             />
+                           </div>
+                           <button 
+                              onClick={() => handleAddModel(mfrName)} 
+                              className="w-full mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 text-sm disabled:opacity-50"
+                              disabled={!newModel.id.trim()}
+                            >
+                              新增型號
+                           </button>
+                        </div>
+                        
+                        {/* Existing Models List */}
+                        {data.models.map(model => (
+                          <div key={model.id} className="flex justify-between items-start border-b pb-2 text-sm last:border-b-0 last:pb-0">
+                            <div>
+                                <div className="font-medium text-gray-800">{model.id}</div>
+                                <div className="text-xs text-gray-500">
+                                    年份: {model.years.join(', ')} | 代碼: {model.codes.join(', ')}
+                                </div>
+                            </div>
+                            <button onClick={() => handleDeleteModel(mfrName, model.id)} className="text-red-400 hover:text-red-600">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                        {data.models.length === 0 && <p className="text-center text-gray-400 text-sm py-2">無型號</p>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {Object.keys(carInventory).length === 0 && (
+                    <p className="text-center text-gray-400 py-4 border-dashed border rounded-lg">請添加第一個製造商</p>
+                )}
+              </div>
+            </Card>
+
+
+            {/* Exchange Rate and Fee Management (Unchanged) */}
 
             <Card className="p-5">
               <SectionHeader icon={DollarSign} title="匯率管理 (Exchange Rates)" />
