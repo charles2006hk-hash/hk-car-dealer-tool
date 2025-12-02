@@ -3,21 +3,10 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 
 // --- Firebase CDN Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- 1. 硬編碼您的 Firebase 配置 ---
-const MANUAL_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBMSujD0hN0sVniMpeyYHVgdN0bJOKNAmg", // Placeholder value
-  authDomain: "hk-car-dealer-tool.firebaseapp.com",
-  projectId: "hk-car-dealer-tool",
-  storageBucket: "hk-car-dealer-tool.firebasestorage.app",
-  messagingSenderId: "53318644210",
-  appId: "1:53318644210:web:43a35553f825247c7cbb6b",
-  measurementId: "G-92FJL41BGT"
-};
-
-const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Logic ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, DE: 8.6 };
@@ -28,8 +17,8 @@ const COUNTRIES = {
 };
 const DEFAULT_FEES = {
   JP: { origin: { auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, shipping: { label: '船運費', val: '100000' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '5500' }, parts: { label: '更換配件/維修', val: '3000' }, insurance: { label: '保險費', val: '1500' }, license: { label: '牌費', val: '5800' } } },
-  UK: { origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '船運費', val: '1500' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } },
-  DE: { origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '船運費', val: '1200' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } }
+  UK: { origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '1500' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } },
+  DE: { origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '1200' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } }
 };
 const DEFAULT_INVENTORY = {
   Toyota: { models: [{ id: 'Alphard', years: ['2023', '2022'], codes: ['AH30', 'AH40'] }, { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] }] },
@@ -134,24 +123,47 @@ export default function App() {
       setTimeout(() => setSaveMsg(null), 3000);
   };
 
-  // 1. Firebase Init
+  // 1. Firebase Init: 使用環境變數進行初始化
   useEffect(() => {
+      setLogLevel('debug');
       const init = async () => {
+          let app = null;
+          let auth = null;
+          let firestore = null;
+          let appId = 'default-app-id';
+
           try {
-              const app = initializeApp(MANUAL_FIREBASE_CONFIG);
-              const auth = getAuth(app);
-              const firestore = getFirestore(app);
+              // 取得全域配置
+              const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+              appId = typeof __app_id !== 'undefined' ? __app_id : appId;
+              
+              if (!firebaseConfig || !firebaseConfig.apiKey) {
+                  throw new Error("Firebase config not found.");
+              }
+
+              app = initializeApp(firebaseConfig);
+              auth = getAuth(app);
+              firestore = getFirestore(app);
               
               // 關鍵：設置內存持久化以避免 iFrame 儲存錯誤
               await setPersistence(auth, inMemoryPersistence);
-              // 匿名登入
-              await signInAnonymously(auth);
+
+              // 處理認證邏輯
+              if (typeof __initial_auth_token !== 'undefined') { 
+                  await signInWithCustomToken(auth, __initial_auth_token); 
+              } else { 
+                  await signInAnonymously(auth); 
+              }
               
               onAuthStateChanged(auth, (user) => {
                   if (user) {
                       setUserId(user.uid);
                       setDb(firestore);
                       setIsReady(true);
+                      console.log("Firebase initialized and signed in. User ID:", user.uid);
+                  } else {
+                      setIsReady(true);
+                      console.log("Authentication failed or not ready.");
                   }
               });
           } catch (e) {
@@ -163,16 +175,19 @@ export default function App() {
       init();
   }, []);
 
-  // Refs
+  // Refs: 使用全域 APP_ID 來建構路徑
+  const APP_ID_PATH = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  
   // 修正：將路徑從 5 段 (Collection) 變為 6 段 (Document)
-  const getSettingsRef = () => db && userId ? doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/settings/user_config`) : null; 
-  // 歷史記錄本身就是一個 Collection，因此保持 5 段是正確的 (但要確保使用 collection() 而不是 doc())
-  const getHistoryRef = () => db && userId ? collection(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`) : null; 
+  const getSettingsRef = useCallback(() => db && userId ? doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/settings/user_config`) : null, [db, userId, APP_ID_PATH]);
+  // 歷史記錄本身是一個 Collection，因此保持 5 段是正確的
+  const getHistoryRef = useCallback(() => db && userId ? collection(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`) : null, [db, userId, APP_ID_PATH]);
 
   // 2. Sync Settings
   useEffect(() => {
-      if (!db || !userId) return;
-      const settingsDocRef = getSettingsRef(); // 使用修正後的 document reference
+      const settingsDocRef = getSettingsRef();
+      if (!db || !userId || !settingsDocRef) return;
+      
       const unsub = onSnapshot(settingsDocRef, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
@@ -180,23 +195,31 @@ export default function App() {
               if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
           } else {
-              setDoc(settingsDocRef, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY });
+              setDoc(settingsDocRef, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY }, { merge: true });
           }
+      }, (error) => {
+          console.error("Settings Snapshot Error:", error);
+          showMsg("設定同步失敗: " + error.message, "error");
       });
       return () => unsub();
-  }, [db, userId]);
+  }, [db, userId, getSettingsRef]);
 
   // 3. Sync History
   useEffect(() => {
-      if (!db || !userId) return;
-      const q = query(getHistoryRef());
+      const historyColRef = getHistoryRef();
+      if (!db || !userId || !historyColRef) return;
+      
+      const q = query(historyColRef);
       const unsub = onSnapshot(q, (snap) => {
           const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           list.sort((a, b) => b.ts - a.ts);
           setHistory(list);
+      }, (error) => {
+           console.error("History Snapshot Error:", error);
+           showMsg("歷史記錄同步失敗: " + error.message, "error");
       });
       return () => unsub();
-  }, [db, userId]);
+  }, [db, userId, getHistoryRef]);
 
   // 4. Sync Fees on Country Change
   useEffect(() => {
@@ -223,7 +246,7 @@ export default function App() {
   // --- Actions ---
 
   const saveHistory = async () => {
-      if (!db) return showMsg("未連接資料庫", "error");
+      if (!db || !userId) return showMsg("未連接資料庫或未登入", "error");
       if (grandTotal <= 0) return showMsg("金額為 0", "error");
       const record = {
           ts: Date.now(),
@@ -244,7 +267,7 @@ export default function App() {
   };
 
   const saveConfig = async () => {
-      if (!db) return;
+      if (!db || !userId) return;
       try {
         await setDoc(getSettingsRef(), { rates, fees, inventory }, { merge: true });
         showMsg("設定已儲存");
@@ -254,7 +277,9 @@ export default function App() {
   };
 
   const toggleLock = async (item) => {
+      if (!db || !userId) return;
       try {
+        // 使用正確的 document path
         await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`, item.id), { isLocked: !item.isLocked });
       } catch (e) {
           showMsg("更新鎖定狀態失敗: " + e.message, "error");
@@ -268,7 +293,9 @@ export default function App() {
           message: "確定要刪除此記錄嗎？",
           type: "danger",
           onConfirm: async () => {
+              if (!db || !userId) return;
               try {
+                // 使用正確的 document path
                 await deleteDoc(doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`, item.id));
                 setModal(null);
                 showMsg("已刪除");
@@ -355,6 +382,10 @@ export default function App() {
                           <t.icon className="w-4 h-4" /><span className="hidden sm:inline">{t.label}</span>
                       </button>
                   ))}
+              </div>
+              {/* 顯示 UserId 供多用戶協作參考 */}
+              <div className="text-xs text-slate-400 truncate max-w-[80px] sm:max-w-none">
+                  {userId ? `ID: ${userId}` : <Loader2 className="w-4 h-4 animate-spin"/>}
               </div>
           </div>
       </div>
