@@ -1,19 +1,43 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft } from 'lucide-react';
 
-// --- Firebase CDN Imports (使用 CDN URL 確保單一檔案環境兼容性) ---
+// --- Firebase CDN Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-// 引入 inMemoryPersistence 和 setPersistence 來解決 iFrame/沙盒環境的存儲訪問錯誤
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-
 // --- Global Constants & FRT Calculation ---
 
-// 1. 🚨 檢查全局變數是否存在，並從 Canvas 注入的配置中獲取 Firebase 設置 🚨
-const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : null;
+// 1. 🚨 硬編碼您的 Firebase 配置 (解決配置缺失問題) 🚨
+const MANUAL_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
+  authDomain: "hk-car-dealer-tool.firebaseapp.com",
+  projectId: "hk-car-dealer-tool",
+  storageBucket: "hk-car-dealer-tool.firebasestorage.app",
+  messagingSenderId: "53318644210",
+  appId: "1:53318644210:web:43a35553f825247c7cbb6b",
+  measurementId: "G-92FJL41BGT"
+};
+
+// 嘗試從環境獲取，如果失敗則使用您的手動配置
+const getFirebaseConfig = () => {
+    try {
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            return JSON.parse(__firebase_config);
+        }
+    } catch (e) {
+        console.warn("Failed to parse env config, using manual fallback.");
+    }
+    return MANUAL_FIREBASE_CONFIG;
+};
+
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'hk-car-dealer-tool-app'; // Fallback App ID
+
+// 在 HTML/React 應用中，設定日誌級別以便除錯
+if (process.env.NODE_ENV !== 'production') {
+  // setLogLevel('debug'); // 如果需要詳細日誌可取消註釋
+}
 
 const DEFAULT_RATES = {
   JP: 0.053, 
@@ -84,6 +108,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   }, [value]);
 
   const filteredOptions = useMemo(() => {
+    // 確保 options 是有效的陣列
     const validOptions = Array.isArray(options) ? options : [];
     if (!searchTerm) return validOptions;
     const lowerSearch = searchTerm.toLowerCase();
@@ -121,7 +146,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           disabled={disabled}
-          onBlur={() => setTimeout(() => setIsOpen(false), 100)} 
+          onBlur={() => setTimeout(() => setIsOpen(false), 100)} // Delay blur to allow selection click
         />
         
         {searchTerm && (
@@ -146,7 +171,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
             <li
               key={index}
               className="px-3 py-2 text-sm text-gray-700 cursor-pointer hover:bg-blue-50 hover:text-blue-600"
-              onMouseDown={(e) => { e.preventDefault(); handleSelect(option); }} 
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(option); }} // Use onMouseDown to prevent blur/loss of focus issue
             >
               {option}
             </li>
@@ -204,6 +229,9 @@ export default function App() {
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  
+  // 2. 🚨 新增狀態來追踪是否正確連接了 Firebase
+  const [isPersistent, setIsPersistent] = useState(false); 
 
   // --- Application State (Defaults) ---
   const [activeTab, setActiveTab] = useState('calculator'); 
@@ -234,8 +262,7 @@ export default function App() {
   const [modalConfig, setModalConfig] = useState(null); 
   
   // --- Firebase connection status ---
-  const isFirebaseConfigured = useMemo(() => !!firebaseConfig && !!firebaseConfig.projectId, []);
-  const isFirebaseConnected = useMemo(() => isAuthReady && !!db && !!auth && userId && !userId.startsWith('session') && !userId.startsWith('init-error'), [isAuthReady, db, auth, userId]);
+  const isFirebaseConnected = useMemo(() => !!db && !!auth, [db, auth]);
 
 
   // --- Firestore Path Helper ---
@@ -244,46 +271,54 @@ export default function App() {
     // Private data path: /artifacts/{appId}/users/{userId}/history
     return collection(dbInstance, `artifacts/${appId}/users/${currentUserId}/history`);
   }, []); 
+  
+  const getSettingsDocRef = useCallback((dbInstance, currentUserId) => {
+      if (!dbInstance || !currentUserId) return null;
+      return doc(dbInstance, `artifacts/${appId}/users/${currentUserId}/settings/dealerSettings`);
+  }, []);
 
 
-  // --- Firebase Initialization and Authentication (CRITICAL FIXES HERE) ---
+  // --- Firebase Initialization and Authentication (Refactored for strict sequencing) ---
   useEffect(() => {
-    let unsubscribeAuth = () => {};
-
-    if (!isFirebaseConfigured) {
-        setIsAuthReady(true);
-        setUserId('session-' + crypto.randomUUID()); 
-        console.warn("Running in non-persistent session mode. Firebase configuration is missing.");
-        showStatus('未連接 Firebase。數據將在重新整理後清除。', 'error');
-        return () => {}; // Nothing to clean up if no Firebase setup happened
-    }
     
     // Helper function to handle async initialization
     const initFirebase = async () => {
-      setLogLevel('Debug'); // Enable debug logging for Firebase
+      
+      // 3. 使用合併的配置邏輯，確保有配置可用
+      const configToUse = getFirebaseConfig();
+      
+      if (!configToUse || !configToUse.projectId) {
+          console.error("Firebase Config Invalid:", configToUse);
+          showStatus("Firebase 配置無效，無法連接。", "error");
+          setIsAuthReady(true);
+          return;
+      }
 
       try {
         // 1. Initialize core services
-        const app = initializeApp(firebaseConfig);
+        const app = initializeApp(configToUse);
         const firestore = getFirestore(app);
         const authInstance = getAuth(app);
         
         // 🚨 CRITICAL FIX: Set persistence FIRST and wait for it.
-        // This MUST happen before any sign-in attempt, even the internal ones triggered by getAuth.
-        await setPersistence(authInstance, inMemoryPersistence); 
+        // This solves the "Access to storage is not allowed" error.
+        await setPersistence(authInstance, inMemoryPersistence);
         console.log("Firebase Auth Persistence set to in-memory.");
 
         // 2. Set up the Auth State Listener FIRST
-        unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
+        onAuthStateChanged(authInstance, (user) => {
             if (user) {
                 setUserId(user.uid);
+                setIsPersistent(true); // We have a user, we are persistent!
             } else {
+                // Fallback if user logs out (unlikely in this flow)
                 setUserId('guest-' + crypto.randomUUID()); 
+                setIsPersistent(false);
             }
-            setIsAuthReady(true); // Mark ready once the initial check is done
+            setIsAuthReady(true); 
         });
         
-        // 3. Attempt sign-in to trigger the listener (Listener will handle state updates)
+        // 3. Attempt sign-in
         if (initialAuthToken) {
            await signInWithCustomToken(authInstance, initialAuthToken);
            console.log("Firebase Auth: Signed in with custom token.");
@@ -296,11 +331,9 @@ export default function App() {
         setDb(firestore);
         setAuth(authInstance);
 
-
       } catch (error) {
         console.error("Firebase initialization or sign-in failed:", error);
-        // Show the user the specific error (e.g. storage access)
-        showStatus(`Firebase 初始化失敗或登入錯誤: ${error.message}`, 'error');
+        showStatus(`Firebase 初始化失敗: ${error.message}`, 'error');
         setIsAuthReady(true); 
         setUserId('init-error-' + crypto.randomUUID()); 
       }
@@ -309,20 +342,41 @@ export default function App() {
     // Run the async initialization
     initFirebase();
     
-    // Return the cleanup function for the listener
-    return () => {
-      unsubscribeAuth();
-    };
-    
-  }, [initialAuthToken, isFirebaseConfigured]); 
+  }, [initialAuthToken]); 
+
+  // --- Firestore Settings Listener (onSnapshot) ---
+  useEffect(() => {
+     if (!isAuthReady || !db || !userId || !isPersistent) return;
+
+     const settingsRef = getSettingsDocRef(db, userId);
+     
+     const unsubscribe = onSnapshot(settingsRef, (docSnap) => {
+          if (docSnap.exists()) {
+              const data = docSnap.data();
+              setRates(data.rates || DEFAULT_RATES);
+              setDefaultFees(data.defaultFees || DEFAULT_FEES);
+              if(data.carInventory) setCarInventory(data.carInventory);
+          } else {
+              // Create defaults if missing
+              setDoc(settingsRef, {
+                  rates: DEFAULT_RATES,
+                  defaultFees: DEFAULT_FEES,
+                  carInventory: DEFAULT_INVENTORY
+              }, { merge: true });
+          }
+      }, (error) => {
+          console.error("Error fetching settings:", error);
+      });
+
+      return () => unsubscribe();
+  }, [isAuthReady, db, userId, isPersistent, getSettingsDocRef]);
+
 
   // --- Firestore History Listener (onSnapshot) ---
   useEffect(() => {
-    // 3. 🚨 確保所有 Firestore 操作都在身份驗證就緒後執行 🚨
-    if (!isFirebaseConnected) return; 
+    if (!isAuthReady || !db || !userId || !isPersistent) return; 
 
     const historyRef = getHistoryCollectionRef(db, userId);
-    
     const q = query(historyRef); 
     
     setIsHistoryLoading(true);
@@ -342,15 +396,14 @@ export default function App() {
       
       setHistory(fetchedHistory);
       setIsHistoryLoading(false);
-      console.log(`History loaded: ${fetchedHistory.length} records for user: ${userId}`);
     }, (error) => {
       console.error("Error fetching history:", error);
       setIsHistoryLoading(false);
-      showStatus('無法加載歷史記錄，請檢查網路連接或 Firestore 安全規則。', 'error');
+      showStatus('無法加載歷史記錄，請檢查網路連接。', 'error');
     });
 
     return () => unsubscribe(); 
-  }, [isFirebaseConnected, db, userId, getHistoryCollectionRef]);
+  }, [isAuthReady, db, userId, getHistoryCollectionRef, isPersistent]);
 
 
   // When country changes, reset fees to defaults
@@ -379,19 +432,46 @@ export default function App() {
   };
   
   // --- Data Saving Handlers (Firestore/Settings) ---
-  const saveSettings = () => {
-    // NOTE: Settings are stored in memory only.
-    showStatus('設定已成功儲存到記憶體！', 'success');
+  const saveSettings = async () => {
+    if (!isPersistent || !db) {
+         return showStatus('設定已儲存到記憶體 (未連線雲端)', 'success');
+    }
+
+    try {
+        const settingsRef = getSettingsDocRef(db, userId);
+        await setDoc(settingsRef, { 
+            rates, 
+            defaultFees, 
+            carInventory 
+        }, { merge: true });
+        showStatus('設定已成功儲存到雲端！', 'success');
+    } catch (e) {
+        console.error("Failed to save settings:", e);
+        showStatus('儲存設定失敗，請檢查網路。', 'error');
+    }
   };
 
   const resetSettings = () => {
     setModalConfig({
       title: '確認重置所有設定',
-      message: '確定要重置所有設定回預設值嗎？重置後您需要重新儲存自訂匯率和費用。此操作不可復原。',
-      onConfirm: () => {
+      message: '確定要重置所有設定回預設值嗎？這將覆蓋您的雲端儲存。',
+      onConfirm: async () => {
         setRates(DEFAULT_RATES);
         setDefaultFees(DEFAULT_FEES);
         setCarInventory(DEFAULT_INVENTORY);
+        
+        if (isPersistent && db) {
+            try {
+                const settingsRef = getSettingsDocRef(db, userId);
+                await setDoc(settingsRef, {
+                    rates: DEFAULT_RATES,
+                    defaultFees: DEFAULT_FEES,
+                    carInventory: DEFAULT_INVENTORY
+                });
+            } catch(e) {
+                console.error("Reset sync failed:", e);
+            }
+        }
         showStatus('所有設定已重置回預設值。', 'success');
         // Reset current calculator view to reflect new defaults
         setSelectedCountry('JP');
@@ -431,10 +511,6 @@ export default function App() {
 
 
   const saveToHistory = async () => {
-    if (!isFirebaseConnected) {
-        return showStatus('數據庫尚未連接或用戶未驗證，無法儲存。', 'error');
-    }
-    
     // --- Pre-check: Ensure critical fields are non-zero ---
     const carPriceVal = parseFloat(carPrice) || 0;
     const approvedRetailPriceVal = parseFloat(approvedRetailPrice) || 0;
@@ -447,17 +523,17 @@ export default function App() {
       return showStatus('總成本計算結果為零或無效', 'error');
     }
 
-    // Format date manually as 'YYYY/MM/DD HH:MM:SS'
+    // Format date manually
     const now = new Date();
     const formattedDate = now.toLocaleString('zh-HK', { 
         day: '2-digit', month: '2-digit', year: 'numeric', 
         hour: '2-digit', minute: '2-digit', second: '2-digit', 
-        hour12: false // Use 24-hour format
+        hour12: false 
     });
 
     const newRecordContent = {
       date: formattedDate,
-      timestamp: now.toISOString(), // Use ISO string for consistent sorting/indexing
+      timestamp: now.toISOString(), 
       countryId: selectedCountry,
       isLocked: false, 
       
@@ -470,7 +546,6 @@ export default function App() {
       carDetails: { ...carDetails }, 
 
       feesAtTimeOfSaving: {
-          // Deep clone the current calculation fees for the record
           origin: JSON.parse(JSON.stringify(currentOriginFees)),
           hk: JSON.parse(JSON.stringify(currentHKFees)), 
       },
@@ -484,12 +559,18 @@ export default function App() {
       }
     };
 
+    if (!isPersistent || !db) {
+        // Fallback to memory state update only
+        setHistory(prev => [newRecordContent, ...prev]);
+        showStatus('記錄已儲存 (僅記憶體，未連線雲端)', 'success');
+        setTimeout(() => setActiveTab('history'), 800);
+        return;
+    }
+
     try {
         const historyRef = getHistoryCollectionRef(db, userId);
         await addDoc(historyRef, newRecordContent);
         showStatus('記錄已成功儲存到雲端資料庫！', 'success');
-        
-        // Go to history tab after a small delay 
         setTimeout(() => setActiveTab('history'), 800);
         
     } catch (e) {
@@ -499,10 +580,6 @@ export default function App() {
   };
 
   const deleteHistoryItem = async (item) => {
-    if (!isFirebaseConnected) {
-        return showStatus('數據庫尚未連接，無法刪除', 'error');
-    }
-
     if (item.isLocked) {
         return showStatus('此記錄已被鎖定，請先解鎖才能刪除。', 'error');
     }
@@ -511,6 +588,13 @@ export default function App() {
         title: '確認刪除記錄',
         message: `確定要刪除日期為 ${item.date} 的估價記錄嗎？刪除後無法復原。`,
         onConfirm: async () => {
+             if (!isPersistent || !db) {
+                 setHistory(prev => prev.filter(h => h.timestamp !== item.timestamp));
+                 showStatus('記錄已刪除 (記憶體)', 'success');
+                 setModalConfig(null);
+                 return;
+             }
+
             try {
                 const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, item.id);
                 await deleteDoc(historyDocRef);
@@ -527,7 +611,13 @@ export default function App() {
   };
   
   const toggleLockHistoryItem = async (id, currentLockState) => {
-      if (!isFirebaseConnected) return;
+      if (!isPersistent || !db) {
+          // Update local state for UI feedback even if not persistent
+           setHistory(prev => prev.map(item => 
+               item.id === id ? { ...item, isLocked: !currentLockState } : item
+           ));
+           return;
+      }
 
       try {
         const historyDocRef = doc(db, `artifacts/${appId}/users/${userId}/history`, id);
@@ -573,7 +663,8 @@ export default function App() {
     }
     setCarInventory(prev => ({ ...prev, [name]: { models: [] } }));
     setNewManufacturer('');
-    saveSettings(); 
+    // Trigger save immediately to persist the new state
+    setTimeout(saveSettings, 0); 
   };
 
   const handleDeleteManufacturer = (mfrName) => {
@@ -586,7 +677,7 @@ export default function App() {
                 return rest;
             });
             setEditingManufacturer(null);
-            saveSettings(); 
+            setTimeout(saveSettings, 0); 
             setModalConfig(null);
         },
         type: 'danger'
@@ -609,7 +700,7 @@ export default function App() {
       [mfrName]: { ...prev[mfrName], models: [...prev[mfrName].models, newCar] }
     }));
     setNewModel({ id: '', years: '', codes: '' });
-    saveSettings(); 
+    setTimeout(saveSettings, 0); 
   };
 
   const handleDeleteModel = (mfrName, modelId) => {
@@ -621,7 +712,7 @@ export default function App() {
                 ...prev,
                 [mfrName]: { ...prev[mfrName], models: prev[mfrName].models.filter(m => m.id !== modelId) }
             }));
-            saveSettings();
+            setTimeout(saveSettings, 0); 
             setModalConfig(null);
         },
         type: 'danger'
@@ -750,10 +841,10 @@ export default function App() {
             <h1 className="text-lg font-bold tracking-wide sm:hidden">行家助手</h1>
             {/* 根據是否連接 Firebase 顯示狀態 */}
             <span 
-              className={`text-xs px-2 py-0.5 rounded-full ${isFirebaseConnected ? 'bg-green-600' : 'bg-red-600'}`} 
-              title={isFirebaseConnected ? "數據已儲存在雲端，重新整理不會遺失。" : "數據未持久化，重新整理將會清除。"}
+              className={`text-xs px-2 py-0.5 rounded-full ${isPersistent ? 'bg-green-600' : 'bg-red-600'}`} 
+              title={isPersistent ? "數據已儲存在雲端，重新整理不會遺失。" : "數據未持久化，重新整理將會清除。"}
             >
-              {isFirebaseConnected ? '雲端模式' : '會話模式'}
+              {isPersistent ? '雲端模式' : '會話模式'}
             </span>
             {userId && <span className="text-xs text-gray-400 ml-2 truncate hidden sm:block">用戶ID: {userId}</span>}
             {!isAuthReady && <Loader2 className='w-4 h-4 ml-2 animate-spin text-gray-400' />}
@@ -774,7 +865,7 @@ export default function App() {
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">記錄</span>
               <span className="sm:hidden">記錄 ({history.length})</span>
-               {isHistoryLoading && isFirebaseConnected && <Loader2 className="w-4 h-4 animate-spin absolute right-0 top-0 m-0.5 text-yellow-400" />}
+               {isHistoryLoading && isPersistent && <Loader2 className="w-4 h-4 animate-spin absolute right-0 top-0 m-0.5 text-yellow-400" />}
             </button>
             <button 
               onClick={() => setActiveTab('settings')}
@@ -789,14 +880,15 @@ export default function App() {
       </div>
       
       {/* Configuration Missing Warning */}
-      {!isFirebaseConfigured && (
+      {!isPersistent && (
           <div className="max-w-3xl mx-auto p-4">
               <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow-sm" role="alert">
                   <div className="flex">
                       <AlertTriangle className="w-5 h-5 mt-0.5 mr-3" />
                       <div>
-                          <p className="font-bold">連線警告：Firebase 配置缺失</p>
-                          <p className="text-sm">應用程式正在 **會話模式** 運行，所有估價記錄在重新整理後將會丟失。</p>
+                          <p className="font-bold">連線警告：無法連接到雲端資料庫</p>
+                          <p className="text-sm">應用程式正在 **會話模式** 運行。所有估價記錄和設定在重新整理頁面後將會丟失。</p>
+                          <p className="text-xs mt-1 text-red-500">如果您有自己的 Firebase 專案，請在程式碼中更新 `MANUAL_FIREBASE_CONFIG`。</p>
                       </div>
                   </div>
               </div>
@@ -819,7 +911,7 @@ export default function App() {
                   className={`flex-1 min-w-[100px] py-3 px-4 rounded-xl border flex flex-col items-center justify-center transition-all ${selectedCountry === c.id ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600 shadow-md' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                 >
                   <span className="text-lg font-bold">{c.name.split(' ')[0]}</span>
-                  <span className="text-xs text-gray-500">匯率: {currentRate}</span>
+                  <span className="text-xs text-gray-500">匯率: {rates[c.id]}</span>
                 </button>
               ))}
             </div>
@@ -970,11 +1062,15 @@ export default function App() {
                 
                 <button 
                   onClick={saveToHistory}
-                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0 || !isFirebaseConnected} 
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg active:scale-95"
+                  disabled={grandTotal <= 0 || carPriceVal <= 0 || approvedRetailPriceVal <= 0} 
+                  className={`w-full sm:w-auto flex items-center justify-center gap-2 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95 
+                    ${isPersistent 
+                        ? 'bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed' 
+                        : 'bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed'}`
+                  }
                 >
                   <PlusCircle className="w-5 h-5" />
-                  <span>記錄預算 (持久儲存)</span>
+                  <span>{isPersistent ? '記錄預算 (持久儲存)' : '記錄預算 (會話模式)'}</span>
                 </button>
               </div>
 
@@ -999,12 +1095,12 @@ export default function App() {
              <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <List className="w-6 h-6 text-blue-600" />
-                歷史記錄 (Firestore)
+                {isPersistent ? '歷史記錄 (Firestore)' : '歷史記錄 (會話記憶體)'}
               </h2>
               <span className="text-sm text-gray-500">共 {history.length} 筆</span>
             </div>
 
-            {isHistoryLoading && isFirebaseConnected ? (
+            {isHistoryLoading && isPersistent ? (
                <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 flex flex-col items-center">
                  <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-4 animate-spin" />
                  <p className="text-gray-400">正在加載歷史記錄...</p>
@@ -1014,7 +1110,9 @@ export default function App() {
               <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                 <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <p className="text-gray-400">暫無記錄，請到計算器進行估算。</p>
-                {isFirebaseConnected && <p className='text-xs text-gray-500 mt-2 font-bold'>**注意: 數據已儲存到雲端，不會遺失。**</p>}
+                <p className={`text-xs mt-2 font-bold ${isPersistent ? 'text-green-500' : 'text-red-500'}`}>
+                    {isPersistent ? '**注意: 數據已儲存到雲端，不會遺失。**' : '**注意: 數據僅儲存在本次會話，刷新將丟失。**'}
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1090,7 +1188,7 @@ export default function App() {
                       </div>
                        <div>
                         <div className="font-medium text-red-600">首次登記稅 (FRT)</div>
-                        <div className='text-red-600'>{fmtMoney(item.inputValues.approvedRetailPrice > 0 ? item.calculations.calculatedFRT : 0)}</div>
+                        <div className='text-red-600'>{fmtMoney(item.calculations.calculatedFRT)}</div>
                         <div className='text-gray-400'>(PRP {fmtMoney(item.inputValues.approvedRetailPrice)})</div>
                       </div>
                     </div>
@@ -1101,12 +1199,12 @@ export default function App() {
           </div>
         )}
 
-        {/* --- SETTINGS TAB --- */}
+        {/* --- SETTINGS TAB (設定頁面) --- */}
         {activeTab === 'settings' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
             
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800">後台參數設定</h2>
+              <h2 className="text-xl font-bold text-gray-800">後台參數設定 {isPersistent ? '(雲端儲存)' : '(會話模式)'}</h2>
               <div className="flex gap-2">
                 <button onClick={resetSettings} className="flex items-center gap-1 px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-sm font-medium">
                   <RotateCcw className="w-4 h-4" /> 重置
@@ -1244,7 +1342,9 @@ export default function App() {
               </div>
               <div className="mt-2 flex items-start gap-2 text-sm text-gray-500 bg-red-50 p-2 rounded border border-red-100">
                 <Info className="w-4 h-4 mt-0.5 text-red-700" />
-                <p className='text-red-700 font-bold'>匯率數據僅儲存在記憶體中。更改後請記得按 **確認設定**。</p>
+                <p className='text-red-700 font-bold'>
+                    {isPersistent ? '匯率數據將儲存到雲端。更改後請記得按 **確認設定**。' : '警告：匯率數據僅儲存在記憶體中。更改後請記得按 **確認設定**。'}
+                </p>
               </div>
             </Card>
 
