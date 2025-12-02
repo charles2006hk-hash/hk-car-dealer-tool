@@ -142,7 +142,9 @@ export default function App() {
               const auth = getAuth(app);
               const firestore = getFirestore(app);
               
+              // 關鍵：設置內存持久化以避免 iFrame 儲存錯誤
               await setPersistence(auth, inMemoryPersistence);
+              // 匿名登入
               await signInAnonymously(auth);
               
               onAuthStateChanged(auth, (user) => {
@@ -217,7 +219,7 @@ export default function App() {
 
   // --- Actions ---
 
-  const saveHistory = async () => {
+  const saveHistory = async () => { // <--- 修正後的函式名稱
       if (!db) return showMsg("未連接資料庫", "error");
       if (grandTotal <= 0) return showMsg("金額為 0", "error");
       const record = {
@@ -229,15 +231,31 @@ export default function App() {
           results: { carPriceHKD, originTotalHKD, hkTotal, frt, grandTotal },
           isLocked: false
       };
-      await addDoc(getHistoryRef(), record);
-      showMsg("已記錄");
-      setTimeout(() => setActiveTab('history'), 500);
+      try {
+        await addDoc(getHistoryRef(), record);
+        showMsg("已記錄");
+        setTimeout(() => setActiveTab('history'), 500);
+      } catch (e) {
+          showMsg("儲存失敗: " + e.message, "error");
+      }
   };
 
   const saveConfig = async () => {
       if (!db) return;
-      await setDoc(getSettingsRef(), { rates, fees, inventory }, { merge: true });
-      showMsg("設定已儲存");
+      try {
+        await setDoc(getSettingsRef(), { rates, fees, inventory }, { merge: true });
+        showMsg("設定已儲存");
+      } catch (e) {
+          showMsg("設定儲存失敗: " + e.message, "error");
+      }
+  };
+
+  const toggleLock = async (item) => {
+      try {
+        await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`, item.id), { isLocked: !item.isLocked });
+      } catch (e) {
+          showMsg("更新鎖定狀態失敗: " + e.message, "error");
+      }
   };
 
   const deleteHistoryItem = (item) => {
@@ -247,9 +265,13 @@ export default function App() {
           message: "確定要刪除此記錄嗎？",
           type: "danger",
           onConfirm: async () => {
-              await deleteDoc(doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`, item.id));
-              setModal(null);
-              showMsg("已刪除");
+              try {
+                await deleteDoc(doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`, item.id));
+                setModal(null);
+                showMsg("已刪除");
+              } catch (e) {
+                  showMsg("刪除失敗: " + e.message, "error");
+              }
           }
       });
   };
@@ -270,7 +292,7 @@ export default function App() {
       if (!newManufacturer) return;
       setInventory(prev => ({ ...prev, [newManufacturer]: { models: [] } }));
       setNewManufacturer('');
-      setTimeout(saveConfig, 100); // Trigger auto save
+      setTimeout(saveConfig, 100);
   };
 
   const deleteMfr = (mfr) => {
@@ -291,7 +313,7 @@ export default function App() {
 
   const addModel = (mfr) => {
       if (!newModel.id) return;
-      const newCar = { id: newModel.id, years: newModel.years.split(','), codes: newModel.codes.split(',') };
+      const newCar = { id: newModel.id, years: newModel.years.split(',').map(s=>s.trim()).filter(Boolean), codes: newModel.codes.split(',').map(s=>s.trim()).filter(Boolean) };
       setInventory(prev => ({
           ...prev,
           [mfr]: { ...prev[mfr], models: [...prev[mfr].models, newCar] }
@@ -408,7 +430,10 @@ export default function App() {
                               <span>雜: {fmt(originTotalHKD + hkTotal)}</span>
                           </div>
                       </div>
-                      <button onClick={saveToHistory} disabled={grandTotal<=0} className="w-full sm:w-auto bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                      <button 
+                          onClick={saveHistory} // <--- 修正: 使用正確的函式名稱 saveHistory
+                          disabled={grandTotal<=0} 
+                          className="w-full sm:w-auto bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                           <PlusCircle className="w-5 h-5"/> 記錄預算
                       </button>
                   </div>
@@ -425,16 +450,16 @@ export default function App() {
                           <Card key={item.id} className="p-4 group hover:shadow-md transition">
                               <div className="flex justify-between items-start mb-2">
                                   <div>
-                                      <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.countryId}</span>
+                                      <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.country}</span>
                                       <span className="text-xs text-gray-500">{item.date}</span>
                                       <div className="font-bold text-gray-800 mt-1">
                                           {item.details.manufacturer} {item.details.model} <span className="font-normal text-sm text-gray-500">{item.details.year}</span>
                                       </div>
                                   </div>
                                   <div className="flex gap-1">
-                                      <button onClick={() => loadRecord(item)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="載入"><ArrowLeft className="w-4 h-4"/></button>
+                                      <button onClick={() => loadHistoryItem(item)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="載入"><ArrowLeft className="w-4 h-4"/></button>
                                       <button onClick={() => toggleLock(item)} className={`p-1.5 rounded ${item.isLocked ? 'text-red-500' : 'text-gray-400 hover:text-gray-600'}`}>{item.isLocked ? <Lock className="w-4 h-4"/> : <Unlock className="w-4 h-4"/>}</button>
-                                      <button onClick={() => deleteRecord(item)} disabled={item.isLocked} className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 rounded"><Trash2 className="w-4 h-4"/></button>
+                                      <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-30 rounded"><Trash2 className="w-4 h-4"/></button>
                                   </div>
                               </div>
                               <div className="flex justify-between items-end border-t pt-2 mt-2">
@@ -513,13 +538,13 @@ export default function App() {
                                <div className="grid grid-cols-2 gap-4">
                                    <div className="space-y-2">
                                        <div className="text-xs font-bold text-gray-400">當地</div>
-                                       {Object.entries(defaultFees[c].origin).map(([k, v]) => (
+                                       {Object.entries(fees[c].origin).map(([k, v]) => (
                                            <InputGroup key={k} label={v.label} value={v.val} onChange={val => setFees(f => ({...f, [c]: {...f[c], origin: {...f[c].origin, [k]: {...v, val} } } }))} />
                                        ))}
                                    </div>
                                    <div className="space-y-2">
                                        <div className="text-xs font-bold text-gray-400">香港</div>
-                                       {Object.entries(defaultFees[c].hk).map(([k, v]) => (
+                                       {Object.entries(fees[c].hk).map(([k, v]) => (
                                            <InputGroup key={k} label={v.label} value={v.val} onChange={val => setFees(f => ({...f, [c]: {...f[c], hk: {...f[c].hk, [k]: {...v, val} } } }))} />
                                        ))}
                                    </div>
@@ -530,10 +555,16 @@ export default function App() {
                    
                    <div className="flex justify-end gap-3">
                        <button onClick={() => {
-                           if(confirm('重置所有設定？')) {
-                               setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY);
-                               saveConfig();
-                           }
+                           setModal({
+                               title: "重置所有設定",
+                               message: "這將把所有匯率、費用和庫存重置為預設值，確定嗎？",
+                               type: "danger",
+                               onConfirm: () => {
+                                   setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY);
+                                   setModal(null);
+                                   saveConfig();
+                               }
+                           });
                        }} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg">重置</button>
                        <button onClick={saveConfig} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"><Save className="w-4 h-4"/> 儲存設定</button>
                    </div>
