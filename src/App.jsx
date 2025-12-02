@@ -8,7 +8,7 @@ import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, de
 
 // --- 1. 硬編碼您的 Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
+  apiKey: "AIzaSyBMSujD0hN0sVniMpeyYHVgdN0bJOKNAmg", // Placeholder value
   authDomain: "hk-car-dealer-tool.firebaseapp.com",
   projectId: "hk-car-dealer-tool",
   storageBucket: "hk-car-dealer-tool.firebasestorage.app",
@@ -164,20 +164,23 @@ export default function App() {
   }, []);
 
   // Refs
-  const getSettingsRef = () => db && userId ? doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/settings`) : null;
-  const getHistoryRef = () => db && userId ? collection(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`) : null;
+  // 修正：將路徑從 5 段 (Collection) 變為 6 段 (Document)
+  const getSettingsRef = () => db && userId ? doc(db, `artifacts/${APP_ID_PATH}/users/${userId}/settings/user_config`) : null; 
+  // 歷史記錄本身就是一個 Collection，因此保持 5 段是正確的 (但要確保使用 collection() 而不是 doc())
+  const getHistoryRef = () => db && userId ? collection(db, `artifacts/${APP_ID_PATH}/users/${userId}/history`) : null; 
 
   // 2. Sync Settings
   useEffect(() => {
       if (!db || !userId) return;
-      const unsub = onSnapshot(getSettingsRef(), (snap) => {
+      const settingsDocRef = getSettingsRef(); // 使用修正後的 document reference
+      const unsub = onSnapshot(settingsDocRef, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
               if(d.rates) setRates(d.rates);
               if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
           } else {
-              setDoc(getSettingsRef(), { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY });
+              setDoc(settingsDocRef, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY });
           }
       });
       return () => unsub();
@@ -219,7 +222,7 @@ export default function App() {
 
   // --- Actions ---
 
-  const saveHistory = async () => { // <--- 修正後的函式名稱
+  const saveHistory = async () => {
       if (!db) return showMsg("未連接資料庫", "error");
       if (grandTotal <= 0) return showMsg("金額為 0", "error");
       const record = {
@@ -431,7 +434,7 @@ export default function App() {
                           </div>
                       </div>
                       <button 
-                          onClick={saveHistory} // <--- 修正: 使用正確的函式名稱 saveHistory
+                          onClick={saveHistory} 
                           disabled={grandTotal<=0} 
                           className="w-full sm:w-auto bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                           <PlusCircle className="w-5 h-5"/> 記錄預算
