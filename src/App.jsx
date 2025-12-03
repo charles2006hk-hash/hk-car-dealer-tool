@@ -270,7 +270,7 @@ const PrintableReport = ({ data, onClose }) => {
                         <span className="text-xl font-bold text-gray-800">{fmt(results.landedCost)}</span>
                     </div>
                     <div className="text-xs text-gray-400 text-right mb-4 border-b pb-4">
-                        (車價 + 當地雜費 + 香港雜費) - 不含稅/保險/牌費
+                        (車價 + 當地雜費 + 香港雜費 + A1稅) - 不含牌費/保險
                     </div>
                     
                     <div className="flex justify-between items-center">
@@ -436,11 +436,13 @@ export default function App() {
   Object.values(currHkLicenseFees || {}).forEach(v => hkLicenseTotal += (parseFloat(v.val) || 0));
   const totalLicenseCost = hkLicenseTotal + frt;
 
-  // Cost 1: Landed Cost (車輛到港成本)
-  const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal;
+  // Cost 1: Landed Cost (車輛到港成本) = Car + OriginFees + HKMiscFees + FRT (A1)
+  // 注意：這裏的 landedCost 包含了稅，但 UI 顯示的「車輛到港成本」按您的要求是：
+  // 車價+當地雜費+香港雜費 (不含牌費、保險）+A1税
+  const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal + frt;
   
-  // Cost 2: Total Cost (總成本)
-  const totalCost = landedCost + totalLicenseCost;
+  // Cost 2: Total Cost (總成本) = Landed Cost + License Fee + Insurance
+  const totalCost = landedCost + hkLicenseTotal;
 
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
@@ -733,19 +735,19 @@ export default function App() {
                               <span className="text-sm text-gray-700">首次登記稅 (FRT)</span>
                               <span className="font-bold text-orange-700">{fmt(frt)}</span>
                           </div>
-                          <div className="text-right text-xs text-gray-500 mt-2">小計 (含稅): {fmt(totalLicenseCost)}</div>
+                          <div className="text-right text-xs text-gray-500 mt-2">小計 (不含稅): {fmt(hkLicenseTotal)}</div>
                       </Card>
                   </div>
 
                   {/* Total Bar */}
                   <div className="sticky bottom-0 bg-slate-800 text-white p-4 rounded-xl shadow-xl flex flex-col justify-between gap-4 z-10">
                       <div className="flex justify-between w-full border-b border-slate-600 pb-2 mb-1">
-                          <span className="text-sm text-gray-300">車輛到港成本:</span>
+                          <span className="text-sm text-gray-300">車輛到港成本 (含A1稅):</span>
                           <span className="text-lg font-semibold">{fmt(landedCost)}</span>
                       </div>
                       <div className="flex justify-between w-full items-end">
                           <div>
-                            <div className="text-xs text-gray-400">總成本 (含出牌):</div>
+                            <div className="text-xs text-gray-400">總成本 (Total Cost):</div>
                             <div className="text-3xl font-bold leading-none text-green-400">{fmt(totalCost)}</div>
                           </div>
                           <div className="flex gap-2">
