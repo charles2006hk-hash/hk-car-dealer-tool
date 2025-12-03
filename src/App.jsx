@@ -21,7 +21,7 @@ const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, DE: 8.6 };
-const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 500 }; // 新增預設系統設定
+const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 500 }; 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
@@ -30,19 +30,55 @@ const COUNTRIES = {
 
 const DEFAULT_FEES = {
   JP: {
-    origin: { auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, shipping: { label: '船運費', val: '100000' } },
-    hk_misc: { terminal: { label: '碼頭費', val: '500' }, emission: { label: '檢驗廢氣', val: '5500' }, glass: { label: '更換玻璃', val: '2000' }, booking: { label: '排期驗車', val: '1000' }, fuel: { label: '入油', val: '500' }, process: { label: '工序費', val: '2000' }, misc: { label: '雜項支出', val: '1000' } },
-    hk_license: { licenseFee: { label: '政府牌費', val: '5800' }, insurance: { label: '保險', val: '2000' } }
+    origin: { 
+        auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, 
+        shipping: { label: '船運費', val: '100000' } 
+    },
+    hk_misc: { 
+        terminal: { label: '碼頭費', val: '500' },
+        emission: { label: '檢驗廢氣', val: '5500' },
+        glass: { label: '更換玻璃', val: '2000' },
+        booking: { label: '排期驗車', val: '1000' },
+        fuel: { label: '入油', val: '500' },
+        process: { label: '工序費', val: '2000' },
+        misc: { label: '雜項支出', val: '1000' }
+    },
+    hk_license: {
+        licenseFee: { label: '政府牌費', val: '5800' },
+        insurance: { label: '保險', val: '2000' }
+    }
   },
   UK: {
     origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '1500' } },
-    hk_misc: { terminal: { label: '碼頭費', val: '500' }, emission: { label: '檢驗廢氣', val: '6500' }, glass: { label: '更換玻璃', val: '2500' }, booking: { label: '排期驗車', val: '1000' }, fuel: { label: '入油', val: '500' }, process: { label: '工序費', val: '2500' }, misc: { label: '雜項支出', val: '1000' } },
-    hk_license: { licenseFee: { label: '政府牌費', val: '5800' }, insurance: { label: '保險', val: '2500' } }
+    hk_misc: { 
+        terminal: { label: '碼頭費', val: '500' },
+        emission: { label: '檢驗廢氣', val: '6500' },
+        glass: { label: '更換玻璃', val: '2500' },
+        booking: { label: '排期驗車', val: '1000' },
+        fuel: { label: '入油', val: '500' },
+        process: { label: '工序費', val: '2500' },
+        misc: { label: '雜項支出', val: '1000' }
+    },
+    hk_license: {
+        licenseFee: { label: '政府牌費', val: '5800' },
+        insurance: { label: '保險', val: '2500' }
+    }
   },
   DE: {
     origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '1200' } },
-    hk_misc: { terminal: { label: '碼頭費', val: '500' }, emission: { label: '檢驗廢氣', val: '6500' }, glass: { label: '更換玻璃', val: '2500' }, booking: { label: '排期驗車', val: '1000' }, fuel: { label: '入油', val: '500' }, process: { label: '工序費', val: '2500' }, misc: { label: '雜項支出', val: '1000' } },
-    hk_license: { licenseFee: { label: '政府牌費', val: '5800' }, insurance: { label: '保險', val: '2500' } }
+    hk_misc: { 
+        terminal: { label: '碼頭費', val: '500' },
+        emission: { label: '檢驗廢氣', val: '6500' },
+        glass: { label: '更換玻璃', val: '2500' },
+        booking: { label: '排期驗車', val: '1000' },
+        fuel: { label: '入油', val: '500' },
+        process: { label: '工序費', val: '2500' },
+        misc: { label: '雜項支出', val: '1000' }
+    },
+    hk_license: {
+        licenseFee: { label: '政府牌費', val: '5800' },
+        insurance: { label: '保險', val: '2500' }
+    }
   }
 };
 
@@ -62,7 +98,6 @@ const calculateFRT = (prp) => {
     return t;
 };
 
-// Helper to convert file to Base64
 const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -141,7 +176,6 @@ const PrintableReport = ({ data, onClose }) => {
     return (
         <div className="fixed inset-0 z-[100] bg-gray-100 overflow-auto flex flex-col items-center p-4 md:p-8">
             <div className="w-full max-w-3xl bg-white shadow-2xl rounded-none md:rounded-lg p-8 print:p-0 print:shadow-none print:w-full print:max-w-none" id="printable-report">
-                {/* Report Header */}
                 <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-6">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">車輛成本估價單</h1>
@@ -153,7 +187,6 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
                 </div>
 
-                {/* Car Details */}
                 <div className="mb-8">
                     <h3 className="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-2 mb-4">車輛資料</h3>
                     <div className="grid grid-cols-2 gap-y-3 text-sm">
@@ -165,7 +198,6 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
                 </div>
 
-                {/* Financial Breakdown */}
                 <div className="mb-8">
                     <h3 className="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-2 mb-4">費用明細</h3>
                     <table className="w-full text-sm mb-6">
@@ -215,7 +247,6 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
                 </div>
 
-                {/* Attachments List (If any) */}
                 {attachments && attachments.length > 0 && (
                     <div className="mb-8 page-break-inside-avoid">
                         <h3 className="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-2 mb-4">附件文件 ({attachments.length})</h3>
@@ -239,7 +270,6 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
                 )}
 
-                {/* Final Totals */}
                 <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 page-break-inside-avoid">
                     <div className="flex justify-between items-center mb-2">
                         <span className="text-gray-600 font-medium">車輛到港成本 (Landed Cost):</span>
@@ -291,9 +321,12 @@ export default function App() {
   // Calculator Inputs
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
+  
+  // Split Fees State
   const [currOriginFees, setCurrOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
+  
   const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '' });
   
   // Attachments State (Files)
@@ -337,7 +370,7 @@ export default function App() {
               if(d.rates) setRates(d.rates);
               if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
-              if(d.appConfig) setAppConfig(d.appConfig); // Sync app config
+              if(d.appConfig) setAppConfig(d.appConfig);
           } else {
               setDoc(ref, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY, appConfig: DEFAULT_CONFIG }, { merge: true });
           }
@@ -366,7 +399,7 @@ export default function App() {
           setCurrHkLicenseFees(fees[country].hk_license);
           setCarPrice('');
           setPrp('');
-          setAttachments([]); // Clear attachments on country switch
+          setAttachments([]);
       }
   }, [country, fees]);
 
@@ -414,7 +447,6 @@ export default function App() {
     if (newAttachments.length > 0) {
         setAttachments(prev => [...prev, ...newAttachments]);
     }
-    // Reset input
     e.target.value = null; 
   };
 
@@ -453,9 +485,21 @@ export default function App() {
           timestamp: serverTimestamp(),
           country, details,
           vals: { carPrice, prp, rate },
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
-          attachments: attachments, // Save files
+          fees: { 
+            origin: currOriginFees, 
+            hk_misc: currHkMiscFees,
+            hk_license: currHkLicenseFees
+          },
+          results: { 
+            carPriceHKD, 
+            originTotalHKD, 
+            hkMiscTotal,
+            hkLicenseTotal: totalLicenseCost,
+            frt, 
+            landedCost,
+            totalCost 
+          },
+          attachments: attachments, 
           isLocked: false
       };
       try {
@@ -463,6 +507,21 @@ export default function App() {
         showMsg("已記錄");
         setTimeout(() => setActiveTab('history'), 500);
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
+  };
+
+  // --- 修正函式定義：generateCurrentReport 必須定義在被呼叫之前 (或在同一個作用域內) ---
+  const generateCurrentReport = () => {
+      if(totalCost <= 0) return showMsg("無效的計算數據", "error");
+      const currentData = {
+          details,
+          vals: { carPrice, prp, rate },
+          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
+          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
+          country,
+          date: new Date().toLocaleString('zh-HK'),
+          attachments // 確保附件也被包含在當前報告中
+      };
+      setReportData(currentData);
   };
 
   const saveConfig = async () => {
@@ -482,6 +541,10 @@ export default function App() {
       setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license);
       setAttachments(item.attachments || []); // Load attachments
       setActiveTab('calculator'); showMsg("記錄已載入");
+  };
+
+  const generateReport = (item) => {
+      setReportData(item);
   };
 
   // Inventory Handlers
@@ -593,7 +656,11 @@ export default function App() {
                       <div className="flex justify-between w-full border-b border-slate-600 pb-2 mb-1"><span className="text-sm text-gray-300">車輛到港成本 (含A1稅):</span><span className="text-lg font-semibold">{fmt(landedCost)}</span></div>
                       <div className="flex justify-between w-full items-end">
                           <div><div className="text-xs text-gray-400">總成本 (Total Cost):</div><div className="text-3xl font-bold leading-none text-green-400">{fmt(totalCost)}</div></div>
-                          <div className="flex gap-2"><button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><Printer className="w-4 h-4"/> 報告</button><button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><PlusCircle className="w-4 h-4"/> 記錄</button></div>
+                          <div className="flex gap-2">
+                              {/* 確保 generateCurrentReport 被正確呼叫 */}
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><Printer className="w-4 h-4"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><PlusCircle className="w-4 h-4"/> 記錄</button>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -649,6 +716,35 @@ export default function App() {
                        <SectionHeader icon={Car} title="車輛庫存管理" color="text-green-700" />
                        <div className="flex gap-2 mb-4"><input value={newManufacturer} onChange={e => setNewManufacturer(e.target.value)} placeholder="新增品牌" className="flex-1 text-sm p-2 border rounded" /><button onClick={addMfr} disabled={!newManufacturer} className="bg-green-600 text-white px-3 rounded text-sm">新增</button></div>
                        {/* Inventory Lists ... */}
+                       <div className="space-y-2">
+                           {Object.keys(inventory).map(mfr => (
+                               <div key={mfr} className="border rounded-lg bg-gray-50 overflow-hidden">
+                                   <div className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100" onClick={() => setEditingMfr(editingMfr === mfr ? null : mfr)}>
+                                       <span className="font-bold text-sm">{mfr} ({inventory[mfr]?.models?.length || 0})</span>
+                                       <div className="flex gap-2">
+                                            <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" onClick={(e) => {e.stopPropagation(); deleteMfr(mfr)}} />
+                                            <ChevronDown className={`w-4 h-4 transition ${editingMfr === mfr ? 'rotate-180' : ''}`} />
+                                       </div>
+                                   </div>
+                                   {editingMfr === mfr && (
+                                       <div className="p-3 border-t bg-white">
+                                           <div className="grid grid-cols-4 gap-2 mb-3">
+                                               <input placeholder="型號" value={newModel.id} onChange={e => setNewModel(m => ({...m, id: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <input placeholder="年份" value={newModel.years} onChange={e => setNewModel(m => ({...m, years: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <input placeholder="代號" value={newModel.codes} onChange={e => setNewModel(m => ({...m, codes: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <button onClick={() => addModel(mfr)} disabled={!newModel.id} className="bg-blue-500 text-white rounded text-xs hover:bg-blue-600">新增</button>
+                                           </div>
+                                           {(inventory[mfr]?.models || []).map(m => (
+                                               <div key={m.id} className="flex justify-between items-center text-xs py-1 border-b last:border-0">
+                                                   <span><b>{m.id}</b> <span className="text-gray-500">[{m.codes.join(',')}]</span></span>
+                                                   <X className="w-3 h-3 text-red-400 cursor-pointer hover:text-red-600" onClick={() => deleteModel(mfr, m.id)} />
+                                               </div>
+                                           ))}
+                                       </div>
+                                   )}
+                               </div>
+                           ))}
+                       </div>
                    </Card>
                    <Card className="p-4"><SectionHeader icon={DollarSign} title="匯率設定" /><div className="grid grid-cols-3 gap-3">{Object.keys(DEFAULT_RATES).map(c => (<InputGroup key={c} label={c} value={rates[c]} onChange={v => handleRateChange(c, v)} />))}</div></Card>
                    <Card className="p-4">
