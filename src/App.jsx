@@ -255,7 +255,7 @@ const PrintableReport = ({ data, onClose }) => {
                                 </li>
                                 <li className="text-xs text-gray-400 text-right">(PRP: ${vals.prp})</li>
                                 <li className="flex justify-between font-bold border-t pt-1 mt-1">
-                                    <span>小計</span>
+                                    <span>小計 (含稅)</span>
                                     <span>{fmt(results.hkLicenseTotal)}</span>
                                 </li>
                             </ul>
@@ -735,7 +735,7 @@ export default function App() {
                               <span className="text-sm text-gray-700">首次登記稅 (FRT)</span>
                               <span className="font-bold text-orange-700">{fmt(frt)}</span>
                           </div>
-                          <div className="text-right text-xs text-gray-500 mt-2">小計 (不含稅): {fmt(hkLicenseTotal)}</div>
+                          <div className="text-right text-xs text-gray-500 mt-2">小計 (含稅): {fmt(totalLicenseCost)}</div>
                       </Card>
                   </div>
 
