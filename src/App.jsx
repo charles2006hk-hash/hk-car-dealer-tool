@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key } from 'lucide-react';
 
-// --- Firebase Imports (CDN) ---
+// --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- 1. 您的專用 Firebase 配置 ---
-const YOUR_FIREBASE_CONFIG = {
+// --- 1. 硬編碼 Firebase 配置 ---
+const MANUAL_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
   authDomain: "hk-car-dealer-tool.firebaseapp.com",
   projectId: "hk-car-dealer-tool",
@@ -17,37 +17,26 @@ const YOUR_FIREBASE_CONFIG = {
   measurementId: "G-92FJL41BGT"
 };
 
-// --- Constants & Logic ---
+const APP_ID_PATH = 'hk-car-dealer-app';
+
+// --- Constants ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, DE: 8.6 };
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
   DE: { id: 'DE', name: '德國 (Germany)', currency: 'EUR', symbol: '€' },
 };
-
-// 預設費用結構
 const DEFAULT_FEES = {
-  JP: {
-    origin: { auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, shipping: { label: '船運費', val: '100000' } },
-    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '5500' }, parts: { label: '更換配件/維修', val: '3000' }, insurance: { label: '保險費', val: '1500' }, license: { label: '牌費', val: '5800' } }
-  },
-  UK: {
-    origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '船運費', val: '1500' } },
-    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } }
-  },
-  DE: {
-    origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '船運費', val: '1200' } },
-    hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } }
-  }
+  JP: { origin: { auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, shipping: { label: '船運費', val: '100000' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '5500' }, parts: { label: '更換配件/維修', val: '3000' }, insurance: { label: '保險費', val: '1500' }, license: { label: '牌費', val: '5800' } } },
+  UK: { origin: { auctionFee: { label: '出口手續費', val: '500' }, shipping: { label: '1500' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } },
+  DE: { origin: { auctionFee: { label: '出口手續費', val: '400' }, shipping: { label: '1200' } }, hk: { transport: { label: '本地拖車/運輸', val: '2000' }, inspection: { label: '驗車/政府排氣', val: '6500' }, parts: { label: '更換配件/維修', val: '4000' }, insurance: { label: '保險費', val: '2000' }, license: { label: '牌費', val: '5800' } } }
 };
-
 const DEFAULT_INVENTORY = {
   Toyota: { models: [{ id: 'Alphard', years: ['2023', '2022'], codes: ['AH30', 'AH40'] }, { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] }] },
   Honda: { models: [{ id: 'Stepwgn', years: ['2024', '2022'], codes: ['RP6', 'RK5'] }] },
   BMW: { models: [] },
 };
 
-// 首次登記稅計算
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
@@ -64,7 +53,7 @@ const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div cla
 
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => (
   <div className="mb-3">
-    {label && <label className="block text-xs font-medium text-gray-500 mb-1">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>}
+    <label className="block text-xs font-medium text-gray-500 mb-1">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>
     <div className="relative rounded-md shadow-sm">
       {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">{prefix}</span></div>}
       <input 
@@ -82,7 +71,6 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
 
 const AutocompleteInput = ({ label, value, onChange, options = [], disabled = false, placeholder = "" }) => {
   const [open, setOpen] = useState(false);
-  // 安全過濾，避免 options 為 undefined
   const filtered = useMemo(() => (Array.isArray(options) ? options : []).filter(o => o.toLowerCase().includes((value||'').toLowerCase())), [value, options]);
   return (
     <div className="mb-3 relative">
@@ -120,12 +108,24 @@ const ConfirmationModal = ({ config, onClose }) => {
 
 // --- MAIN APP ---
 export default function App() {
-  // Firebase State
+  // --- Firebase State ---
   const [db, setDb] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isReady, setIsReady] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [modal, setModal] = useState(null);
+  
+  // 🚨 NEW: Data Key State (Stable ID)
+  // 嘗試從 localStorage 讀取，如果失敗則生成一個隨機的
+  const [dataKey, setDataKey] = useState(() => {
+      try {
+          const stored = localStorage.getItem('hk_car_dealer_key');
+          return stored || 'demo-shop';
+      } catch(e) {
+          return 'demo-shop'; 
+      }
+  });
+  const [isKeyEditing, setIsKeyEditing] = useState(false);
+  const [tempKey, setTempKey] = useState('');
 
   // App Data
   const [activeTab, setActiveTab] = useState('calculator');
@@ -142,7 +142,7 @@ export default function App() {
   const [currHkFees, setCurrHkFees] = useState(DEFAULT_FEES['JP'].hk);
   const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '' });
   
-  // Inventory UI
+  // Inventory Management UI
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingMfr, setEditingMfr] = useState(null);
   const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
@@ -152,45 +152,38 @@ export default function App() {
       setTimeout(() => setSaveMsg(null), 3000);
   };
 
-  // 1. Firebase Initialization
+  // 1. Firebase Init
   useEffect(() => {
       const init = async () => {
           try {
-              // Initialize App
-              const app = initializeApp(YOUR_FIREBASE_CONFIG);
+              const app = initializeApp(MANUAL_FIREBASE_CONFIG);
               const auth = getAuth(app);
               const firestore = getFirestore(app);
               
-              // 關鍵修正：強制使用內存持久化，避免瀏覽器阻擋
               await setPersistence(auth, inMemoryPersistence);
-              
-              // 匿名登入
               await signInAnonymously(auth);
               
-              // 監聽登入狀態
               onAuthStateChanged(auth, (user) => {
                   if (user) {
-                      setUserId(user.uid);
                       setDb(firestore);
-                      console.log("Connected to Firestore as:", user.uid);
+                      console.log("Firestore connected. Auth UID:", user.uid);
                   }
-                  setIsReady(true);
+                  setIsAuthReady(true);
               });
           } catch (e) {
               console.error("Firebase Init Error:", e);
               showMsg("連線錯誤: " + e.message, "error");
-              setIsReady(true); // Allow app to render even if offline
+              setIsAuthReady(true);
           }
       };
       init();
   }, []);
 
-  // Helper refs for Firestore paths (使用使用者的獨立 collection)
-  // 使用 'users/{userId}/settings' 和 'users/{userId}/history' 結構
-  const getSettingsRef = () => db && userId ? doc(db, 'users', userId, 'settings', 'config') : null;
-  const getHistoryRef = () => db && userId ? collection(db, 'users', userId, 'history') : null;
+  // Refs: 使用 dataKey (資料金鑰) 而不是 auth uid
+  const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
+  const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // 2. Sync Settings from Firestore
+  // 2. Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
@@ -202,32 +195,28 @@ export default function App() {
               if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
           } else {
-              // Initialize defaults if new user
+              // Data key doesn't exist yet, create defaults
               setDoc(ref, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY }, { merge: true });
           }
       });
       return () => unsub();
-  }, [db, userId]);
+  }, [db, dataKey, getSettingsRef]); // Depend on dataKey
 
-  // 3. Sync History from Firestore
+  // 3. Sync History
   useEffect(() => {
       const ref = getHistoryRef();
       if (!ref) return;
 
-      // 使用 orderBy 確保順序，如果索引報錯，則在客戶端排序
-      // const q = query(ref, orderBy('ts', 'desc')); 
-      const q = query(ref); // 暫時移除 orderBy 避免需要建立索引
-
+      const q = query(ref); 
       const unsub = onSnapshot(q, (snap) => {
           const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          // Client-side sort to be safe
           list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
           setHistory(list);
       });
       return () => unsub();
-  }, [db, userId]);
+  }, [db, dataKey, getHistoryRef]); // Depend on dataKey
 
-  // 4. Fees Sync Logic
+  // 4. Sync Fees on Country Change
   useEffect(() => {
       if (fees[country]) {
           setCurrOriginFees(fees[country].origin);
@@ -237,24 +226,36 @@ export default function App() {
       }
   }, [country, fees]);
 
+  // Key Management Handlers
+  const handleKeyChange = () => {
+      if (tempKey.trim()) {
+          const newKey = tempKey.trim();
+          setDataKey(newKey);
+          try {
+             localStorage.setItem('hk_car_dealer_key', newKey);
+          } catch (e) {
+              console.warn("Could not save key to local storage");
+          }
+          setIsKeyEditing(false);
+          showMsg(`已切換至資料庫: ${newKey}`);
+      }
+  };
+
   // Calculation Logic
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp);
-  
   let originTotal = 0;
   Object.values(currOriginFees || {}).forEach(v => originTotal += (parseFloat(v.val) || 0));
   const originTotalHKD = originTotal * rate;
-
   let hkTotal = 0;
   Object.values(currHkFees || {}).forEach(v => hkTotal += (parseFloat(v.val) || 0));
-  
   const grandTotal = carPriceHKD + originTotalHKD + hkTotal + frt;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
   // Actions
   const saveHistoryRecord = async () => {
-      if (!db || !userId) return showMsg("未連接資料庫", "error");
+      if (!db) return showMsg("未連接資料庫", "error");
       if (grandTotal <= 0) return showMsg("金額無效", "error");
       
       const record = {
@@ -278,7 +279,7 @@ export default function App() {
   };
 
   const saveConfig = async () => {
-      if (!db || !userId) return;
+      if (!db) return;
       try {
         await setDoc(getSettingsRef(), { rates, fees, inventory }, { merge: true });
         showMsg("設定已儲存");
@@ -296,7 +297,7 @@ export default function App() {
           type: "danger",
           onConfirm: async () => {
              try {
-                 await deleteDoc(doc(db, 'users', userId, 'history', item.id));
+                 await deleteDoc(doc(getHistoryRef(), item.id));
                  setModal(null);
                  showMsg("已刪除");
              } catch(e) {
@@ -309,7 +310,7 @@ export default function App() {
   const toggleLock = async (item) => {
       if (!db) return;
       try {
-        await updateDoc(doc(db, 'users', userId, 'history', item.id), { isLocked: !item.isLocked });
+        await updateDoc(doc(getHistoryRef(), item.id), { isLocked: !item.isLocked });
       } catch(e) {
           console.error(e);
       }
@@ -393,17 +394,42 @@ export default function App() {
       }));
   };
 
-  if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
+  if (!isAuthReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 pb-20 font-sans">
       <ConfirmationModal config={modal} onClose={() => setModal(null)} />
       
-      {/* Header */}
+      {/* Header with Data Key */}
       <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-lg">
-          <div className="max-w-3xl mx-auto flex justify-between items-center">
-              <div className="flex items-center gap-2 font-bold text-lg"><Truck className="w-6 h-6 text-blue-400"/> HK 汽車行家助手</div>
-              <div className="flex bg-slate-800 rounded-lg p-1">
+          <div className="max-w-3xl mx-auto flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2 font-bold text-lg"><Truck className="w-6 h-6 text-blue-400"/> HK 汽車行家助手</div>
+                  {/* Data Key Switcher */}
+                  <div className="flex items-center gap-2 text-xs bg-slate-800 p-1 rounded-lg border border-slate-700">
+                      <Key className="w-3 h-3 text-yellow-400 ml-1" />
+                      {isKeyEditing ? (
+                          <div className="flex items-center">
+                              <input 
+                                autoFocus
+                                className="bg-slate-700 text-white px-2 py-1 rounded outline-none w-24"
+                                defaultValue={dataKey}
+                                onChange={(e) => setTempKey(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleKeyChange()}
+                              />
+                              <button onClick={handleKeyChange} className="px-2 text-green-400 hover:text-white">✓</button>
+                              <button onClick={() => setIsKeyEditing(false)} className="px-1 text-red-400 hover:text-white">✕</button>
+                          </div>
+                      ) : (
+                          <div className="flex items-center gap-2 px-1 cursor-pointer hover:text-blue-300" onClick={() => { setTempKey(dataKey); setIsKeyEditing(true); }}>
+                              <span className="font-mono text-blue-300">{dataKey}</span>
+                              <span className="text-slate-500">(點擊切換帳號)</span>
+                          </div>
+                      )}
+                  </div>
+              </div>
+
+              <div className="flex bg-slate-800 rounded-lg p-1 self-start">
                   {[
                       {id:'calculator', icon: Calculator, label:'計算'},
                       {id:'history', icon: List, label:`記錄 (${history.length})`},
@@ -414,9 +440,6 @@ export default function App() {
                           <t.icon className="w-4 h-4" /><span className="hidden sm:inline">{t.label}</span>
                       </button>
                   ))}
-              </div>
-              <div className="text-xs text-slate-400 flex items-center gap-1">
-                  {userId ? <span className="text-green-400">● 連線中</span> : <span className="text-red-400">● 離線</span>}
               </div>
           </div>
       </div>
@@ -486,7 +509,7 @@ export default function App() {
                   </div>
 
                   {/* Total Bar */}
-                  <div className="sticky bottom-4 bg-slate-800 text-white p-4 rounded-xl shadow-xl flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="sticky bottom-0 bg-slate-800 text-white p-4 rounded-xl shadow-xl flex flex-col sm:flex-row justify-between items-center gap-4 z-10">
                       <div>
                           <div className="text-xs text-gray-400">預計總成本 (HKD)</div>
                           <div className="text-3xl font-bold leading-none">{fmt(grandTotal)}</div>
@@ -495,7 +518,7 @@ export default function App() {
                               <span>雜: {fmt(originTotalHKD + hkTotal)}</span>
                           </div>
                       </div>
-                      <button onClick={saveHistoryRecord} disabled={grandTotal<=0 || !userId} className="w-full sm:w-auto bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                      <button onClick={saveHistoryRecord} disabled={grandTotal<=0 || !db} className="w-full sm:w-auto bg-green-600 hover:bg-green-500 px-6 py-3 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                           <PlusCircle className="w-5 h-5"/> 記錄預算
                       </button>
                   </div>
@@ -540,7 +563,12 @@ export default function App() {
           {/* === SETTINGS TAB === */}
           {activeTab === 'settings' && (
               <div className="animate-in fade-in duration-300 space-y-6">
-                   {/* Inventory Config */}
+                   <Card className="p-4 border-l-4 border-blue-500">
+                       <div className="text-sm text-gray-600 mb-2">當前資料帳號</div>
+                       <div className="font-mono text-lg font-bold text-blue-800 bg-blue-50 p-2 rounded">{dataKey}</div>
+                       <div className="text-xs text-gray-400 mt-1">所有設定與記錄都儲存在此帳號下。在其他裝置輸入相同帳號即可同步。</div>
+                   </Card>
+
                    <Card className="p-4 border-l-4 border-green-500">
                        <SectionHeader icon={Car} title="車輛庫存管理" color="text-green-700" />
                        
@@ -564,9 +592,9 @@ export default function App() {
                                        <div className="p-3 border-t bg-white">
                                            <div className="grid grid-cols-4 gap-2 mb-3">
                                                <input placeholder="型號" value={newModel.id} onChange={e => setNewModel(m => ({...m, id: e.target.value}))} className="text-xs p-1.5 border rounded" />
-                                               <input placeholder="年份 (2023,2024)" value={newModel.years} onChange={e => setNewModel(m => ({...m, years: e.target.value}))} className="text-xs p-1.5 border rounded" />
-                                               <input placeholder="代號 (AE110)" value={newModel.codes} onChange={e => setNewModel(m => ({...m, codes: e.target.value}))} className="text-xs p-1.5 border rounded" />
-                                               <button onClick={() => addModel(mfr)} disabled={!newModel.id} className="bg-blue-500 text-white rounded text-xs">新增</button>
+                                               <input placeholder="年份" value={newModel.years} onChange={e => setNewModel(m => ({...m, years: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <input placeholder="代號" value={newModel.codes} onChange={e => setNewModel(m => ({...m, codes: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <button onClick={() => addModel(mfr)} disabled={!newModel.id} className="bg-blue-500 text-white rounded text-xs hover:bg-blue-600">新增</button>
                                            </div>
                                            {(inventory[mfr]?.models || []).map(m => (
                                                <div key={m.id} className="flex justify-between items-center text-xs py-1 border-b last:border-0">
@@ -595,7 +623,7 @@ export default function App() {
                        {Object.keys(COUNTRIES).map(c => (
                            <div key={c} className="mb-6 last:mb-0">
                                <h4 className="font-bold text-gray-700 mb-2 border-l-4 border-blue-500 pl-2">{COUNTRIES[c].name}</h4>
-                               <div className="grid grid-cols-2 gap-4">
+                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                    <div className="space-y-2">
                                        <div className="text-xs font-bold text-gray-400">當地</div>
                                        {Object.entries(fees[c]?.origin || {}).map(([k, v]) => (
