@@ -7,6 +7,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, se
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. Firebase 配置 ---
+// 使用您提供的配置
 const MANUAL_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
   authDomain: "hk-car-dealer-tool.firebaseapp.com",
@@ -509,7 +510,6 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
-  // --- 修正函式定義：generateCurrentReport 必須定義在被呼叫之前 (或在同一個作用域內) ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -519,7 +519,7 @@ export default function App() {
           results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
           country,
           date: new Date().toLocaleString('zh-HK'),
-          attachments // 確保附件也被包含在當前報告中
+          attachments
       };
       setReportData(currentData);
   };
@@ -539,7 +539,7 @@ export default function App() {
   const loadHistoryItem = (item) => {
       setCountry(item.country); setCarPrice(item.vals.carPrice); setPrp(item.vals.prp); setDetails(item.details);
       setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license);
-      setAttachments(item.attachments || []); // Load attachments
+      setAttachments(item.attachments || []); 
       setActiveTab('calculator'); showMsg("記錄已載入");
   };
 
