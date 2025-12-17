@@ -7,7 +7,6 @@ import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, se
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. Firebase 配置 ---
-// 使用您提供的配置
 const MANUAL_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
   authDomain: "hk-car-dealer-tool.firebaseapp.com",
@@ -45,7 +44,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5800' },
+        licenseFee: { label: '政府牌費', val: '5794' }, // 預設值 (1501-2500cc)
         insurance: { label: '保險', val: '2000' }
     }
   },
@@ -61,7 +60,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5800' },
+        licenseFee: { label: '政府牌費', val: '5794' },
         insurance: { label: '保險', val: '2500' }
     }
   },
@@ -77,7 +76,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5800' },
+        licenseFee: { label: '政府牌費', val: '5794' },
         insurance: { label: '保險', val: '2500' }
     }
   }
@@ -89,6 +88,7 @@ const DEFAULT_INVENTORY = {
   BMW: { models: [] },
 };
 
+// 首次登記稅 (FRT) 計算
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
@@ -97,6 +97,17 @@ const calculateFRT = (prp) => {
     if (v > 0) { let taxable = Math.min(v, 200000); t += taxable * 1.15; v -= taxable; }
     if (v > 0) { t += v * 1.32; }
     return t;
+};
+
+// 2025 香港汽油私家車牌費計算 (以12個月計)
+const getLicenseFeeByCC = (cc) => {
+    const val = parseFloat(cc);
+    if (!val) return 0;
+    if (val <= 1500) return 5074;
+    if (val <= 2500) return 7498;
+    if (val <= 3500) return 9929;
+    if (val <= 4500) return 12360;
+    return 14694; // > 4500cc
 };
 
 const fileToBase64 = (file) => {
@@ -112,23 +123,41 @@ const fileToBase64 = (file) => {
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Icon className={`w-5 h-5 ${color}`} /><h3 className="font-bold text-gray-700">{title}</h3></div>;
 
-const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => (
-  <div className="mb-3">
-    {label && <label className="block text-xs font-medium text-gray-500 mb-1">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>}
-    <div className="relative rounded-md shadow-sm">
-      {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">{prefix}</span></div>}
-      <input 
-        type={type} 
-        step={step}
-        min={min}
-        className={`focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 ${prefix ? 'pl-8' : 'pl-3'}`} 
-        placeholder={placeholder} 
-        value={value} 
-        onChange={(e) => onChange(e.target.value)} 
-      />
+// InputGroup with Comma Formatting
+const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
+  const displayValue = useMemo(() => {
+    if (value === '' || value === null || value === undefined) return '';
+    return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }, [value]);
+
+  const handleChange = (e) => {
+    const rawValue = e.target.value.replace(/,/g, '');
+    if (rawValue === '' || rawValue === '-') {
+        onChange(rawValue);
+        return;
+    }
+    if (!isNaN(rawValue)) {
+        onChange(rawValue);
+    }
+  };
+
+  return (
+    <div className="mb-3">
+      {label && <label className="block text-xs font-medium text-gray-500 mb-1">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>}
+      <div className="relative rounded-md shadow-sm">
+        {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">{prefix}</span></div>}
+        <input 
+          type="text" 
+          inputMode={type === 'number' ? 'decimal' : 'text'}
+          className={`focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 ${prefix ? 'pl-8' : 'pl-3'}`} 
+          placeholder={placeholder} 
+          value={displayValue} 
+          onChange={handleChange} 
+        />
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const AutocompleteInput = ({ label, value, onChange, options = [], disabled = false, placeholder = "" }) => {
   const [open, setOpen] = useState(false);
@@ -176,7 +205,7 @@ const PrintableReport = ({ data, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-[100] bg-gray-100 overflow-auto flex flex-col items-center p-4 md:p-8">
-            <div className="w-full max-w-3xl bg-white shadow-2xl rounded-none md:rounded-lg p-8 print:p-0 print:shadow-none print:w-full print:max-w-none" id="printable-report">
+            <div className="w-full max-w-4xl bg-white shadow-2xl rounded-none md:rounded-lg p-8 print:p-0 print:shadow-none print:w-full print:max-w-none" id="printable-report">
                 <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-6">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">車輛成本估價單</h1>
@@ -190,59 +219,61 @@ const PrintableReport = ({ data, onClose }) => {
 
                 <div className="mb-8">
                     <h3 className="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-2 mb-4">車輛資料</h3>
-                    <div className="grid grid-cols-2 gap-y-3 text-sm">
-                        <div className="flex"><span className="w-24 text-gray-500">品牌:</span> <span className="font-semibold">{details.manufacturer}</span></div>
-                        <div className="flex"><span className="w-24 text-gray-500">型號:</span> <span className="font-semibold">{details.model}</span></div>
-                        <div className="flex"><span className="w-24 text-gray-500">年份:</span> <span className="font-semibold">{details.year}</span></div>
-                        <div className="flex"><span className="w-24 text-gray-500">代號:</span> <span className="font-semibold">{details.code}</span></div>
-                        <div className="col-span-2 flex mt-1 pt-1 border-t border-dashed"><span className="w-24 text-gray-500">車身號碼:</span> <span className="font-mono font-bold">{details.chassisNo || '-'}</span></div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 text-sm bg-gray-50 p-4 rounded-lg">
+                        <div><span className="text-gray-500 block text-xs">品牌</span> <span className="font-semibold">{details.manufacturer}</span></div>
+                        <div><span className="text-gray-500 block text-xs">型號</span> <span className="font-semibold">{details.model}</span></div>
+                        <div><span className="text-gray-500 block text-xs">年份</span> <span className="font-semibold">{details.year}</span></div>
+                        <div><span className="text-gray-500 block text-xs">代號</span> <span className="font-semibold">{details.code}</span></div>
+                        <div><span className="text-gray-500 block text-xs">排氣量</span> <span className="font-semibold">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
+                        <div><span className="text-gray-500 block text-xs">座位數</span> <span className="font-semibold">{details.seats || '-'}</span></div>
+                        <div className="col-span-2"><span className="text-gray-500 block text-xs">車身號碼</span> <span className="font-mono font-bold">{details.chassisNo || '-'}</span></div>
                     </div>
                 </div>
 
                 <div className="mb-8">
                     <h3 className="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-2 mb-4">費用明細</h3>
-                    <table className="w-full text-sm mb-6">
-                        <thead className="bg-gray-50 border-b">
+                    <table className="w-full text-sm mb-6 border border-gray-200">
+                        <thead className="bg-gray-100">
                             <tr>
-                                <th className="text-left py-2 px-2">項目</th>
-                                <th className="text-right py-2 px-2">金額 ({COUNTRIES[country].currency})</th>
-                                <th className="text-right py-2 px-2">匯率</th>
-                                <th className="text-right py-2 px-2">港幣 (HKD)</th>
+                                <th className="text-left py-2 px-3">項目</th>
+                                <th className="text-right py-2 px-3">金額 ({COUNTRIES[country].currency})</th>
+                                <th className="text-right py-2 px-3">匯率</th>
+                                <th className="text-right py-2 px-3">港幣 (HKD)</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td className="py-2 px-2">當地車價</td>
-                                <td className="text-right px-2">{vals.carPrice}</td>
-                                <td className="text-right px-2">{vals.rate}</td>
-                                <td className="text-right px-2 font-medium">{fmt(results.carPriceHKD)}</td>
+                                <td className="py-2 px-3 border-b">當地車價</td>
+                                <td className="text-right px-3 border-b">{vals.carPrice}</td>
+                                <td className="text-right px-3 border-b">{vals.rate}</td>
+                                <td className="text-right px-3 border-b font-medium">{fmt(results.carPriceHKD)}</td>
                             </tr>
                              <tr>
-                                <td className="py-2 px-2" colSpan="3">當地雜費總計 ({Object.values(fees.origin).map(f => f.label).join('/')})</td>
-                                <td className="text-right px-2 font-medium">{fmt(results.originTotalHKD)}</td>
+                                <td className="py-2 px-3 border-b" colSpan="3">當地雜費總計 ({Object.values(fees.origin).map(f => f.label).join('/')})</td>
+                                <td className="text-right px-3 border-b font-medium">{fmt(results.originTotalHKD)}</td>
                             </tr>
                         </tbody>
                     </table>
 
                     <div className="grid grid-cols-2 gap-8">
                         <div>
-                            <h4 className="font-bold text-gray-700 border-b pb-1 mb-2">香港雜費</h4>
+                            <h4 className="font-bold text-gray-700 border-b-2 border-gray-200 pb-1 mb-2">香港雜費</h4>
                             <ul className="text-sm space-y-1">
                                 {Object.entries(fees.hk_misc).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
+                                    <li key={k} className="flex justify-between border-b border-dashed border-gray-200 py-1 last:border-0"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between font-bold border-t pt-1 mt-1"><span>小計</span><span>{fmt(results.hkMiscTotal)}</span></li>
+                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded mt-1"><span>小計</span><span>{fmt(results.hkMiscTotal)}</span></li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-bold text-gray-700 border-b pb-1 mb-2">出牌費用</h4>
+                            <h4 className="font-bold text-gray-700 border-b-2 border-gray-200 pb-1 mb-2">出牌費用</h4>
                             <ul className="text-sm space-y-1">
                                 {Object.entries(fees.hk_license).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
+                                    <li key={k} className="flex justify-between border-b border-dashed border-gray-200 py-1 last:border-0"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
                                 ))}
                                 <li className="flex justify-between"><span className="text-gray-600">首次登記稅 (A1)</span><span>{fmt(results.frt)}</span></li>
-                                <li className="text-xs text-gray-400 text-right">(PRP: ${vals.prp})</li>
-                                <li className="flex justify-between font-bold border-t pt-1 mt-1"><span>小計 (含稅)</span><span>{fmt(results.hkLicenseTotal)}</span></li>
+                                <li className="text-xs text-gray-400 text-right mb-1">(PRP: ${vals.prp})</li>
+                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(results.hkLicenseTotal)}</span></li>
                             </ul>
                         </div>
                     </div>
@@ -271,15 +302,15 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
                 )}
 
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 page-break-inside-avoid">
+                <div className="bg-gray-100 p-6 rounded-lg border border-gray-300 page-break-inside-avoid">
                     <div className="flex justify-between items-center mb-2">
-                        <span className="text-gray-600 font-medium">車輛到港成本 (Landed Cost):</span>
-                        <span className="text-xl font-bold text-gray-800">{fmt(results.landedCost)}</span>
+                        <span className="text-gray-600 font-medium text-lg">車輛到港成本 (Landed Cost):</span>
+                        <span className="text-2xl font-bold text-gray-800">{fmt(results.landedCost)}</span>
                     </div>
-                    <div className="text-xs text-gray-400 text-right mb-4 border-b pb-4">(車價 + 當地雜費 + 香港雜費 + A1稅) - 不含牌費/保險</div>
+                    <div className="text-xs text-gray-500 text-right mb-4 border-b border-gray-300 pb-4">(車價 + 當地雜費 + 香港雜費 + A1稅) - 不含牌費/保險</div>
                     <div className="flex justify-between items-center">
-                        <span className="text-gray-800 font-bold text-lg">預計總成本 (Total Cost):</span>
-                        <span className="text-3xl font-extrabold text-blue-700">{fmt(results.totalCost)}</span>
+                        <span className="text-gray-900 font-bold text-xl">預計總成本 (Total Cost):</span>
+                        <span className="text-4xl font-extrabold text-blue-800">{fmt(results.totalCost)}</span>
                     </div>
                 </div>
 
@@ -314,7 +345,7 @@ export default function App() {
   const [country, setCountry] = useState('JP');
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [fees, setFees] = useState(DEFAULT_FEES);
-  const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG); // New Config State
+  const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG); 
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
   const [history, setHistory] = useState([]);
   const [reportData, setReportData] = useState(null);
@@ -328,9 +359,9 @@ export default function App() {
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '' });
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', engineCapacity: '' });
   
-  // Attachments State (Files)
+  // Attachments State
   const [attachments, setAttachments] = useState([]);
 
   // Inventory UI
@@ -403,6 +434,17 @@ export default function App() {
           setAttachments([]);
       }
   }, [country, fees]);
+  
+  // Auto-calculate License Fee based on CC (2025 Rates)
+  useEffect(() => {
+      if (details.engineCapacity) {
+          const fee = getLicenseFeeByCC(details.engineCapacity);
+          setCurrHkLicenseFees(prev => ({
+              ...prev,
+              licenseFee: { ...prev.licenseFee, val: fee.toString() }
+          }));
+      }
+  }, [details.engineCapacity]);
 
   const handleKeyChange = () => {
       if (tempKey.trim()) {
@@ -414,7 +456,6 @@ export default function App() {
       }
   };
 
-  // File Upload Handler
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     const currentCount = attachments.length;
@@ -455,7 +496,6 @@ export default function App() {
       setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Calculations
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp); 
@@ -475,7 +515,6 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // Actions
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接資料庫", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
@@ -492,13 +531,7 @@ export default function App() {
             hk_license: currHkLicenseFees
           },
           results: { 
-            carPriceHKD, 
-            originTotalHKD, 
-            hkMiscTotal,
-            hkLicenseTotal: totalLicenseCost,
-            frt, 
-            landedCost,
-            totalCost 
+            carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost 
           },
           attachments: attachments, 
           isLocked: false
@@ -510,6 +543,7 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
+  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -564,7 +598,7 @@ export default function App() {
       {reportData && <PrintableReport data={reportData} onClose={() => setReportData(null)} />}
 
       <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-lg print:hidden">
-          <div className="max-w-3xl mx-auto flex flex-col gap-3">
+          <div className="max-w-7xl mx-auto flex flex-col gap-3">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2 font-bold text-lg"><Truck className="w-6 h-6 text-blue-400"/> HK 汽車行家助手</div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-1 rounded-lg border border-slate-700">
@@ -592,66 +626,76 @@ export default function App() {
 
       {saveMsg && <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded shadow-lg flex items-center gap-2 text-white text-sm ${saveMsg.type === 'error' ? 'bg-red-500' : 'bg-green-600'} print:hidden`}>{saveMsg.type === 'error' ? <AlertTriangle className="w-4 h-4"/> : <CheckCircle className="w-4 h-4"/>}{saveMsg.msg}</div>}
 
-      <div className="max-w-3xl mx-auto p-4 space-y-6 print:hidden">
+      <div className="max-w-7xl mx-auto p-4 space-y-6 print:hidden">
           {/* === CALCULATOR TAB === */}
           {activeTab === 'calculator' && (
               <div className="animate-in fade-in duration-300 space-y-6">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                      {Object.values(COUNTRIES).map(c => (
-                          <button key={c.id} onClick={() => setCountry(c.id)} className={`flex-1 py-3 px-4 rounded-xl border flex flex-col items-center transition min-w-[80px] ${country === c.id ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600' : 'bg-white border-gray-200'}`}><span className="font-bold">{c.name.split(' ')[0]}</span><span className="text-xs text-gray-500">Ex: {rates[c.id] || '-'}</span></button>
-                      ))}
-                  </div>
+                  {/* Grid Layout for Desktop */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left Column: Car Details & Core Costs */}
+                      <div className="lg:col-span-7 space-y-6">
+                           <div className="flex gap-2 overflow-x-auto pb-1">
+                              {Object.values(COUNTRIES).map(c => (
+                                  <button key={c.id} onClick={() => setCountry(c.id)} className={`flex-1 py-3 px-4 rounded-xl border flex flex-col items-center transition min-w-[80px] ${country === c.id ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600' : 'bg-white border-gray-200'}`}><span className="font-bold">{c.name.split(' ')[0]}</span><span className="text-xs text-gray-500">Ex: {rates[c.id] || '-'}</span></button>
+                              ))}
+                          </div>
 
-                  <Card className="p-4">
-                      <SectionHeader icon={Car} title="車輛資料" />
-                      <div className="grid grid-cols-2 gap-3">
-                          <AutocompleteInput label="品牌" value={details.manufacturer} onChange={v => setDetails(d => ({...d, manufacturer:v}))} options={Object.keys(inventory)} />
-                          <AutocompleteInput label="型號" value={details.model} onChange={v => setDetails(d => ({...d, model:v}))} options={inventory[details.manufacturer]?.models.map(m=>m.id) || []} />
-                          <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
-                          <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
-                          <div className="col-span-2"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
-                      </div>
-                  </Card>
-
-                  {/* File Upload Section */}
-                  <Card className="p-4 border-l-4 border-purple-500">
-                      <SectionHeader icon={Paperclip} title={`文件上傳 (最多 ${appConfig.maxFiles} 個, <${appConfig.maxFileSizeKB}KB)`} color="text-purple-700" />
-                      <div className="flex flex-col gap-4">
-                          <label className="flex items-center justify-center w-full h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
-                              <div className="flex flex-col items-center pt-2 pb-3">
-                                  <Upload className="w-6 h-6 text-gray-400 mb-1" />
-                                  <p className="text-xs text-gray-500">點擊上傳圖片/PDF/文檔</p>
+                          <Card className="p-4">
+                              <SectionHeader icon={Car} title="車輛資料" />
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  <div className="col-span-2 md:col-span-2"><AutocompleteInput label="品牌" value={details.manufacturer} onChange={v => setDetails(d => ({...d, manufacturer:v}))} options={Object.keys(inventory)} /></div>
+                                  <div className="col-span-2 md:col-span-2"><AutocompleteInput label="型號" value={details.model} onChange={v => setDetails(d => ({...d, model:v}))} options={inventory[details.manufacturer]?.models.map(m=>m.id) || []} /></div>
+                                  <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
+                                  <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
+                                  <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="text" placeholder="e.g. 2494" />
+                                  <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="e.g. 7" />
+                                  <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
                               </div>
-                              <input type="file" className="hidden" multiple onChange={handleFileUpload} accept="image/*,.pdf,.doc,.docx" />
-                          </label>
-                          {attachments.length > 0 && (
-                              <div className="grid grid-cols-2 gap-2">
-                                  {attachments.map((file, idx) => (
-                                      <div key={idx} className="flex items-center justify-between p-2 bg-gray-100 rounded border text-xs">
-                                          <div className="flex items-center gap-2 overflow-hidden">
-                                              {file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500"/> : <FileIcon className="w-4 h-4 text-gray-500"/>}
-                                              <span className="truncate max-w-[100px]" title={file.name}>{file.name}</span>
-                                          </div>
-                                          <button onClick={() => removeAttachment(idx)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4"/></button>
+                          </Card>
+
+                          <Card className="p-4 border-l-4 border-l-blue-600">
+                              <SectionHeader icon={DollarSign} title="核心成本" color="text-blue-600" />
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><InputGroup label={`當地車價 (${COUNTRIES[country].currency})`} value={carPrice} onChange={setCarPrice} required /><InputGroup label="首次登記稅基準 (PRP)" value={prp} onChange={setPrp} required /></div>
+                              <div className="mt-2 text-right text-sm font-medium text-gray-600">車價折合: <span className="text-blue-600 text-lg">{fmt(carPriceHKD)}</span></div>
+                          </Card>
+                          
+                           {/* File Upload Section */}
+                          <Card className="p-4 border-l-4 border-purple-500">
+                              <SectionHeader icon={Paperclip} title={`文件上傳 (最多 ${appConfig.maxFiles} 個)`} color="text-purple-700" />
+                              <div className="flex flex-col gap-4">
+                                  <label className="flex items-center justify-center w-full h-16 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
+                                      <div className="flex flex-col items-center pt-1 pb-2">
+                                          <Upload className="w-5 h-5 text-gray-400 mb-1" />
+                                          <p className="text-[10px] text-gray-500">點擊上傳圖片/PDF</p>
                                       </div>
-                                  ))}
+                                      <input type="file" className="hidden" multiple onChange={handleFileUpload} accept="image/*,.pdf,.doc,.docx" />
+                                  </label>
+                                  {attachments.length > 0 && (
+                                      <div className="grid grid-cols-2 gap-2">
+                                          {attachments.map((file, idx) => (
+                                              <div key={idx} className="flex items-center justify-between p-2 bg-gray-100 rounded border text-xs">
+                                                  <div className="flex items-center gap-2 overflow-hidden">
+                                                      {file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500"/> : <FileIcon className="w-4 h-4 text-gray-500"/>}
+                                                      <span className="truncate max-w-[80px]" title={file.name}>{file.name}</span>
+                                                  </div>
+                                                  <button onClick={() => removeAttachment(idx)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4"/></button>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  )}
                               </div>
-                          )}
+                          </Card>
                       </div>
-                  </Card>
 
-                  <Card className="p-4 border-l-4 border-l-blue-600">
-                      <SectionHeader icon={DollarSign} title="核心成本" color="text-blue-600" />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><InputGroup label={`當地車價 (${COUNTRIES[country].currency})`} value={carPrice} onChange={setCarPrice} required /><InputGroup label="首次登記稅基準 (PRP)" value={prp} onChange={setPrp} required /></div>
-                      <div className="mt-2 text-right text-sm font-medium text-gray-600">車價折合: <span className="text-blue-600 text-lg">{fmt(carPriceHKD)}</span></div>
-                  </Card>
-
-                  <div className="grid grid-cols-1 gap-4">
-                      <Card className="p-4"><SectionHeader icon={Globe} title="當地雜費" color="text-indigo-600" /><div className="grid grid-cols-2 gap-4">{Object.entries(currOriginFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrOriginFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">折合: {fmt(originTotalHKD)}</div></Card>
-                      <Card className="p-4"><SectionHeader icon={Ship} title="香港雜費 (到港成本)" color="text-green-600" /><div className="grid grid-cols-2 gap-4">{Object.entries(currHkMiscFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkMiscFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">小計: {fmt(hkMiscTotal)}</div></Card>
-                      <Card className="p-4 border-l-4 border-orange-400"><SectionHeader icon={FileText} title="香港出牌費用" color="text-orange-600" /><div className="grid grid-cols-2 gap-4 mb-3">{Object.entries(currHkLicenseFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkLicenseFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="flex justify-between items-center bg-orange-50 p-3 rounded"><span className="text-sm text-gray-700">首次登記稅 (FRT)</span><span className="font-bold text-orange-700">{fmt(frt)}</span></div><div className="text-right text-xs text-gray-500 mt-2">小計 (含稅): {fmt(totalLicenseCost)}</div></Card>
+                      {/* Right Column: Fees & Totals */}
+                      <div className="lg:col-span-5 space-y-4">
+                          <Card className="p-4"><SectionHeader icon={Globe} title="當地雜費" color="text-indigo-600" /><div className="grid grid-cols-2 gap-x-4 gap-y-2">{Object.entries(currOriginFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrOriginFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">折合: {fmt(originTotalHKD)}</div></Card>
+                          <Card className="p-4"><SectionHeader icon={Ship} title="香港雜費 (到港成本)" color="text-green-600" /><div className="grid grid-cols-2 gap-x-4 gap-y-2">{Object.entries(currHkMiscFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkMiscFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">小計: {fmt(hkMiscTotal)}</div></Card>
+                          <Card className="p-4 border-l-4 border-orange-400"><SectionHeader icon={FileText} title="香港出牌費用" color="text-orange-600" /><div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-3">{Object.entries(currHkLicenseFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkLicenseFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="flex justify-between items-center bg-orange-50 p-3 rounded"><span className="text-sm text-gray-700">首次登記稅 (FRT)</span><span className="font-bold text-orange-700">{fmt(frt)}</span></div><div className="text-right text-xs text-gray-500 mt-2">小計 (含稅): {fmt(totalLicenseCost)}</div></Card>
+                      </div>
                   </div>
 
+                  {/* Sticky Footer Total Bar */}
                   <div className="sticky bottom-0 bg-slate-800 text-white p-4 rounded-xl shadow-xl flex flex-col justify-between gap-4 z-10">
                       <div className="flex justify-between w-full border-b border-slate-600 pb-2 mb-1"><span className="text-sm text-gray-300">車輛到港成本 (含A1稅):</span><span className="text-lg font-semibold">{fmt(landedCost)}</span></div>
                       <div className="flex justify-between w-full items-end">
@@ -677,7 +721,10 @@ export default function App() {
                                       <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.country}</span>
                                       <span className="text-xs text-gray-500">{item.date}</span>
                                       <div className="font-bold text-gray-800 mt-1">{item.details.manufacturer} {item.details.model} <span className="font-normal text-sm text-gray-500">{item.details.year}</span></div>
-                                      <div className="text-xs text-gray-400 mt-0.5">{item.details.chassisNo}</div>
+                                      <div className="text-xs text-gray-400 mt-0.5 flex gap-2">
+                                        <span>{item.details.chassisNo || 'No Chassis'}</span>
+                                        {item.details.engineCapacity && <span>| {item.details.engineCapacity}cc</span>}
+                                      </div>
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-1 text-xs text-purple-600"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                   </div>
                                   <div className="flex gap-1">
