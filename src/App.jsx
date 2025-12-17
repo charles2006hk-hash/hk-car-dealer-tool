@@ -44,7 +44,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5794' }, // 預設值 (1501-2500cc)
+        licenseFee: { label: '政府牌費', val: '5794' },
         insurance: { label: '保險', val: '2000' }
     }
   },
@@ -91,7 +91,6 @@ const DEFAULT_INVENTORY = {
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
-    // 香港首次登記稅累進稅率
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.46; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.86; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 200000); t += taxable * 1.15; v -= taxable; }
@@ -99,7 +98,7 @@ const calculateFRT = (prp) => {
     return t;
 };
 
-// 2025 香港汽油私家車牌費計算 (以12個月計)
+// 2025 香港汽油私家車牌費
 const getLicenseFeeByCC = (cc) => {
     const val = parseFloat(cc);
     if (!val) return 0;
@@ -107,7 +106,7 @@ const getLicenseFeeByCC = (cc) => {
     if (val <= 2500) return 7498;
     if (val <= 3500) return 9929;
     if (val <= 4500) return 12360;
-    return 14694; // > 4500cc
+    return 14694; 
 };
 
 const fileToBase64 = (file) => {
@@ -123,7 +122,6 @@ const fileToBase64 = (file) => {
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Icon className={`w-5 h-5 ${color}`} /><h3 className="font-bold text-gray-700">{title}</h3></div>;
 
-// InputGroup with Comma Formatting
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
   const displayValue = useMemo(() => {
     if (value === '' || value === null || value === undefined) return '';
@@ -204,52 +202,66 @@ const ConfirmationModal = ({ config, onClose }) => {
     );
 };
 
-// --- REPORT COMPONENT ---
+// --- REPORT COMPONENT (FIXED PRINT STYLES) ---
 const PrintableReport = ({ data, onClose }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
     const handlePrint = () => window.print();
 
-    // 安全訪問費用物件，防止舊資料格式造成崩潰
     const hkMiscFees = fees.hk_misc || {};
     const hkLicenseFees = fees.hk_license || {};
-    const safeHkMiscTotal = results.hkMiscTotal !== undefined 
-        ? results.hkMiscTotal 
-        : Object.values(hkMiscFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0);
-    
-    const safeHkLicenseTotal = results.hkLicenseTotal !== undefined
-        ? results.hkLicenseTotal
-        : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
+    const safeHkMiscTotal = results.hkMiscTotal !== undefined ? results.hkMiscTotal : Object.values(hkMiscFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0);
+    const safeHkLicenseTotal = results.hkLicenseTotal !== undefined ? results.hkLicenseTotal : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
 
     return (
         <div className="fixed inset-0 z-[100] bg-gray-600/75 flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
-            {/* Print Styles Injection */}
+            {/* 修正後的列印樣式: 使用 visibility 隱藏 body 但顯示報表 */}
             <style>{`
                 @media print {
                     @page { size: A4; margin: 0; }
-                    body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; }
-                    #printable-report { 
-                        width: 210mm; 
-                        min-height: 297mm; 
-                        margin: 0; 
-                        padding: 15mm 15mm; 
-                        box-shadow: none; 
-                        border: none;
-                        position: absolute;
-                        top: 0;
-                        left: 0;
+                    html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: visible; }
+                    
+                    /* 隱藏頁面所有內容 */
+                    body {
+                        visibility: hidden;
+                        background: white;
                     }
-                    /* Hide everything else */
-                    body > *:not(#printable-report-container) { display: none !important; }
+
+                    /* 僅顯示報表容器及其子元素 */
+                    #printable-report-container {
+                        visibility: visible;
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 210mm;
+                        min-height: 297mm;
+                        margin: 0;
+                        padding: 0;
+                        background: white;
+                        z-index: 9999;
+                    }
+                    
+                    #printable-report-container * {
+                        visibility: visible;
+                    }
+                    
+                    /* 設定內部內容邊距 */
+                    #printable-report {
+                        padding: 15mm 20mm;
+                        box-shadow: none;
+                        border: none;
+                    }
+
                     .no-print { display: none !important; }
+                    .page-break-inside-avoid { page-break-inside: avoid; }
                 }
             `}</style>
 
+            {/* ID 對應 CSS 選擇器 */}
             <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full">
                 <div id="printable-report" className="p-10 text-gray-900 h-full flex flex-col">
                     
-                    {/* Header */}
                     <div className="flex justify-between items-end border-b-2 border-gray-800 pb-4 mb-6">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900 tracking-tight">車輛成本估價單</h1>
@@ -261,7 +273,6 @@ const PrintableReport = ({ data, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Car Details */}
                     <div className="mb-6">
                         <h3 className="text-md font-bold text-gray-800 uppercase tracking-wider mb-3 border-l-4 border-blue-500 pl-2">車輛資料</h3>
                         <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm bg-gray-50 p-4 rounded-lg border border-gray-100">
@@ -277,7 +288,6 @@ const PrintableReport = ({ data, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Costs Table */}
                     <div className="mb-6">
                         <h3 className="text-md font-bold text-gray-800 uppercase tracking-wider mb-3 border-l-4 border-blue-500 pl-2">核心成本</h3>
                         <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -307,7 +317,6 @@ const PrintableReport = ({ data, onClose }) => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-8 mb-6">
-                        {/* HK Misc */}
                         <div>
                             <h4 className="font-bold text-gray-700 border-b border-gray-200 pb-1 mb-2 text-sm uppercase">香港雜費</h4>
                             <ul className="text-sm space-y-1">
@@ -317,7 +326,6 @@ const PrintableReport = ({ data, onClose }) => {
                                 <li className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-2"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
-                        {/* Licensing */}
                         <div>
                             <h4 className="font-bold text-gray-700 border-b border-gray-200 pb-1 mb-2 text-sm uppercase">出牌費用</h4>
                             <ul className="text-sm space-y-1">
@@ -331,7 +339,20 @@ const PrintableReport = ({ data, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Footer Totals */}
+                    {attachments && attachments.length > 0 && (
+                        <div className="mb-6 page-break-inside-avoid">
+                            <h3 className="text-md font-bold text-gray-800 uppercase tracking-wider mb-3 border-l-4 border-blue-500 pl-2">附件</h3>
+                            <div className="grid grid-cols-3 gap-3">
+                                {attachments.map((file, idx) => (
+                                    <div key={idx} className="border rounded p-2 flex items-center gap-2 text-xs">
+                                        {file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500"/> : <FileIcon className="w-4 h-4 text-gray-500"/>}
+                                        <span className="truncate w-full" title={file.name}>{file.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="mt-auto">
                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 space-y-4 break-inside-avoid">
                             <div className="flex justify-between items-center border-b border-gray-300 pb-4">
@@ -349,14 +370,12 @@ const PrintableReport = ({ data, onClose }) => {
                                 <span className="text-4xl font-extrabold text-blue-700">{fmt(results.totalCost)}</span>
                             </div>
                         </div>
-                        
                         <div className="mt-6 pt-4 border-t text-center text-xs text-gray-400">
                              <p>© {new Date().getFullYear()} HK Car Dealer Tool | Internal Document</p>
                         </div>
                     </div>
                 </div>
 
-                {/* Floating Controls */}
                 <div className="absolute top-4 right-4 flex gap-2 no-print">
                      <button onClick={handlePrint} className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 flex items-center gap-2"><Printer className="w-4 h-4" /> 列印 / PDF</button>
                      <button onClick={onClose} className="bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700 flex items-center gap-2"><X className="w-4 h-4" /> 關閉</button>
@@ -474,7 +493,7 @@ export default function App() {
       }
   }, [country, fees]);
   
-  // Auto-calculate License Fee based on CC (2025 Rates)
+  // Auto-calculate License Fee
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -554,7 +573,6 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
       const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
@@ -594,7 +612,6 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
-  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -627,53 +644,11 @@ export default function App() {
       setReportData(item);
   };
 
-  // Inventory Handlers - FIXED: Calculate new state and save immediately
-  const addMfr = () => { 
-      if (!newManufacturer) return; 
-      const name = newManufacturer.trim(); 
-      if (inventory[name]) return showMsg("已存在", "error"); 
-      
-      const newInventory = { ...inventory, [name]: { models: [] } };
-      setInventory(newInventory); 
-      setNewManufacturer(''); 
-      saveConfig({ inventory: newInventory });
-  };
-
-  const deleteMfr = (mfr) => { 
-      setModal({ 
-          title: "刪除品牌", 
-          message: `確定刪除 ${mfr}？`, 
-          type: "danger", 
-          onConfirm: () => { 
-              const newInventory = {...inventory}; 
-              delete newInventory[mfr]; 
-              setInventory(newInventory); 
-              setEditingMfr(null); 
-              setModal(null); 
-              saveConfig({ inventory: newInventory });
-          } 
-      }); 
-  };
-
-  const addModel = (mfr) => { 
-      if(!newModel.id) return; 
-      const newCar = { 
-        id: newModel.id.trim(), 
-        years: newModel.years.split(',').filter(Boolean), 
-        codes: newModel.codes.split(',').filter(Boolean) 
-      }; 
-      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } };
-      
-      setInventory(newInventory); 
-      setNewModel({ id: '', years: '', codes: '' }); 
-      saveConfig({ inventory: newInventory });
-  };
-
-  const deleteModel = (mfr, modelId) => { 
-      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } };
-      setInventory(newInventory); 
-      saveConfig({ inventory: newInventory });
-  };
+  // Inventory Handlers
+  const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
+  const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
+  const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
+  const deleteModel = (mfr, modelId) => { const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } }; setInventory(newInventory); saveConfig({ inventory: newInventory }); };
   
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
@@ -814,7 +789,10 @@ export default function App() {
                                       <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.country}</span>
                                       <span className="text-xs text-gray-500">{item.date}</span>
                                       <div className="font-bold text-gray-800 mt-1">{item.details.manufacturer} {item.details.model} <span className="font-normal text-sm text-gray-500">{item.details.year}</span></div>
-                                      <div className="text-xs text-gray-400 mt-0.5">{item.details.chassisNo}</div>
+                                      <div className="text-xs text-gray-400 mt-0.5 flex gap-2">
+                                        <span>{item.details.chassisNo || 'No Chassis'}</span>
+                                        {item.details.engineCapacity && <span>| {item.details.engineCapacity}cc</span>}
+                                      </div>
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-1 text-xs text-purple-600"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                   </div>
                                   <div className="flex gap-1">
