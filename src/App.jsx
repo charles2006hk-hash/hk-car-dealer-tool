@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -44,7 +44,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5794' }, // 預設值 (1501-2500cc)
+        licenseFee: { label: '政府牌費', val: '5794' },
         insurance: { label: '保險', val: '2000' }
     }
   },
@@ -88,7 +88,6 @@ const DEFAULT_INVENTORY = {
   BMW: { models: [] },
 };
 
-// 首次登記稅 (FRT) 計算
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
@@ -99,7 +98,7 @@ const calculateFRT = (prp) => {
     return t;
 };
 
-// 2025 香港汽油私家車牌費計算 (以12個月計)
+// 2025 香港汽油私家車牌費計算
 const getLicenseFeeByCC = (cc) => {
     const val = parseFloat(cc);
     if (!val) return 0;
@@ -107,7 +106,7 @@ const getLicenseFeeByCC = (cc) => {
     if (val <= 2500) return 7498;
     if (val <= 3500) return 9929;
     if (val <= 4500) return 12360;
-    return 14694; // > 4500cc
+    return 14694; 
 };
 
 const fileToBase64 = (file) => {
@@ -123,20 +122,27 @@ const fileToBase64 = (file) => {
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Icon className={`w-5 h-5 ${color}`} /><h3 className="font-bold text-gray-700">{title}</h3></div>;
 
-// InputGroup with Comma Formatting
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
   const displayValue = useMemo(() => {
     if (value === '' || value === null || value === undefined) return '';
-    return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  }, [value]);
+    if (type === 'number') {
+        return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+    return value;
+  }, [value, type]);
 
   const handleChange = (e) => {
-    const rawValue = e.target.value.replace(/,/g, '');
-    if (rawValue === '' || rawValue === '-') {
-        onChange(rawValue);
-        return;
-    }
-    if (!isNaN(rawValue)) {
+    let rawValue = e.target.value;
+    if (type === 'number') {
+        rawValue = rawValue.replace(/,/g, '');
+        if (rawValue === '' || rawValue === '-') {
+            onChange(rawValue);
+            return;
+        }
+        if (!isNaN(rawValue)) {
+            onChange(rawValue);
+        }
+    } else {
         onChange(rawValue);
     }
   };
@@ -147,7 +153,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
       <div className="relative rounded-md shadow-sm">
         {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-gray-500 sm:text-sm">{prefix}</span></div>}
         <input 
-          type="text" 
+          type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
           className={`focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-2 ${prefix ? 'pl-8' : 'pl-3'}`} 
           placeholder={placeholder} 
@@ -200,7 +206,6 @@ const ConfirmationModal = ({ config, onClose }) => {
 const PrintableReport = ({ data, onClose }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
-
     const handlePrint = () => window.print();
 
     return (
@@ -226,7 +231,9 @@ const PrintableReport = ({ data, onClose }) => {
                         <div><span className="text-gray-500 block text-xs">代號</span> <span className="font-semibold">{details.code}</span></div>
                         <div><span className="text-gray-500 block text-xs">排氣量</span> <span className="font-semibold">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
                         <div><span className="text-gray-500 block text-xs">座位數</span> <span className="font-semibold">{details.seats || '-'}</span></div>
-                        <div className="col-span-2"><span className="text-gray-500 block text-xs">車身號碼</span> <span className="font-mono font-bold">{details.chassisNo || '-'}</span></div>
+                        <div><span className="text-gray-500 block text-xs">外觀顏色</span> <span className="font-semibold">{details.exteriorColor || '-'}</span></div>
+                        <div><span className="text-gray-500 block text-xs">內飾顏色</span> <span className="font-semibold">{details.interiorColor || '-'}</span></div>
+                        <div className="col-span-2 md:col-span-4"><span className="text-gray-500 block text-xs">車身號碼</span> <span className="font-mono font-bold">{details.chassisNo || '-'}</span></div>
                     </div>
                 </div>
 
@@ -359,7 +366,7 @@ export default function App() {
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', engineCapacity: '' });
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', engineCapacity: '', exteriorColor: '', interiorColor: '' });
   
   // Attachments State
   const [attachments, setAttachments] = useState([]);
@@ -515,6 +522,27 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
+  // --- NEW: Save Config Helper to handle specific updates ---
+  const saveConfig = async (overrides = {}) => {
+      if (!db) return;
+      // Merge current state with overrides. Note: rates, fees etc are from closure unless overridden.
+      // But for Inventory handlers, we pass the NEW inventory explicitly.
+      const dataToSave = { 
+          rates, 
+          fees, 
+          inventory, 
+          appConfig,
+          ...overrides
+      };
+
+      try { 
+          await setDoc(getSettingsRef(), dataToSave, { merge: true }); 
+          showMsg("設定已儲存"); 
+      } catch(e) { 
+          showMsg("儲存失敗", "error"); 
+      }
+  };
+
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接資料庫", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
@@ -543,7 +571,6 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
-  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -556,11 +583,6 @@ export default function App() {
           attachments
       };
       setReportData(currentData);
-  };
-
-  const saveConfig = async () => {
-      if (!db) return;
-      try { await setDoc(getSettingsRef(), { rates, fees, inventory, appConfig }, { merge: true }); showMsg("設定已儲存"); } catch(e) { showMsg("儲存失敗", "error"); }
   };
 
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
@@ -577,15 +599,53 @@ export default function App() {
       setActiveTab('calculator'); showMsg("記錄已載入");
   };
 
-  const generateReport = (item) => {
-      setReportData(item);
+  // Inventory Handlers - FIXED: Calculate new state and save immediately
+  const addMfr = () => { 
+      if (!newManufacturer) return; 
+      const name = newManufacturer.trim(); 
+      if (inventory[name]) return showMsg("已存在", "error"); 
+      
+      const newInventory = { ...inventory, [name]: { models: [] } };
+      setInventory(newInventory); 
+      setNewManufacturer(''); 
+      saveConfig({ inventory: newInventory });
   };
 
-  // Inventory Handlers
-  const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); setInventory(prev => ({ ...prev, [name]: { models: [] } })); setNewManufacturer(''); setTimeout(saveConfig, 100); };
-  const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInv = {...inventory}; delete newInv[mfr]; setInventory(newInv); setEditingMfr(null); setModal(null); setTimeout(saveConfig, 100); } }); };
-  const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; setInventory(prev => ({ ...prev, [mfr]: { ...prev[mfr], models: [...(prev[mfr].models || []), newCar] } })); setNewModel({ id: '', years: '', codes: '' }); setTimeout(saveConfig, 100); };
-  const deleteModel = (mfr, modelId) => { setInventory(prev => ({ ...prev, [mfr]: { ...prev[mfr], models: (prev[mfr].models || []).filter(m => m.id !== modelId) } })); setTimeout(saveConfig, 100); };
+  const deleteMfr = (mfr) => { 
+      setModal({ 
+          title: "刪除品牌", 
+          message: `確定刪除 ${mfr}？`, 
+          type: "danger", 
+          onConfirm: () => { 
+              const newInventory = {...inventory}; 
+              delete newInventory[mfr]; 
+              setInventory(newInventory); 
+              setEditingMfr(null); 
+              setModal(null); 
+              saveConfig({ inventory: newInventory });
+          } 
+      }); 
+  };
+
+  const addModel = (mfr) => { 
+      if(!newModel.id) return; 
+      const newCar = { 
+        id: newModel.id.trim(), 
+        years: newModel.years.split(',').filter(Boolean), 
+        codes: newModel.codes.split(',').filter(Boolean) 
+      }; 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } };
+      
+      setInventory(newInventory); 
+      setNewModel({ id: '', years: '', codes: '' }); 
+      saveConfig({ inventory: newInventory });
+  };
+
+  const deleteModel = (mfr, modelId) => { 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } };
+      setInventory(newInventory); 
+      saveConfig({ inventory: newInventory });
+  };
   
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
@@ -647,7 +707,12 @@ export default function App() {
                                   <div className="col-span-2 md:col-span-2"><AutocompleteInput label="型號" value={details.model} onChange={v => setDetails(d => ({...d, model:v}))} options={inventory[details.manufacturer]?.models.map(m=>m.id) || []} /></div>
                                   <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
                                   <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
-                                  <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="text" placeholder="e.g. 2494" />
+                                  
+                                  {/* Colors & New Fields */}
+                                  <InputGroup label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} type="text" placeholder="e.g. White" />
+                                  <InputGroup label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} type="text" placeholder="e.g. Black" />
+                                  
+                                  <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="e.g. 2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="e.g. 7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
                               </div>
