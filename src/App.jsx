@@ -44,7 +44,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5794' },
+        licenseFee: { label: '政府牌費', val: '5794' }, // 預設值 (1501-2500cc)
         insurance: { label: '保險', val: '2000' }
     }
   },
@@ -91,6 +91,7 @@ const DEFAULT_INVENTORY = {
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
+    // 香港首次登記稅累進稅率
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.46; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.86; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 200000); t += taxable * 1.15; v -= taxable; }
@@ -98,7 +99,7 @@ const calculateFRT = (prp) => {
     return t;
 };
 
-// 2025 香港汽油私家車牌費計算
+// 2025 香港汽油私家車牌費計算 (以12個月計)
 const getLicenseFeeByCC = (cc) => {
     const val = parseFloat(cc);
     if (!val) return 0;
@@ -106,7 +107,7 @@ const getLicenseFeeByCC = (cc) => {
     if (val <= 2500) return 7498;
     if (val <= 3500) return 9929;
     if (val <= 4500) return 12360;
-    return 14694; 
+    return 14694; // > 4500cc
 };
 
 const fileToBase64 = (file) => {
@@ -122,6 +123,7 @@ const fileToBase64 = (file) => {
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Icon className={`w-5 h-5 ${color}`} /><h3 className="font-bold text-gray-700">{title}</h3></div>;
 
+// InputGroup with Comma Formatting
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
   const displayValue = useMemo(() => {
     if (value === '' || value === null || value === undefined) return '';
@@ -206,7 +208,20 @@ const ConfirmationModal = ({ config, onClose }) => {
 const PrintableReport = ({ data, onClose }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
+
     const handlePrint = () => window.print();
+
+    // 安全訪問費用物件，防止舊資料格式造成崩潰
+    const hkMiscFees = fees.hk_misc || {};
+    const hkLicenseFees = fees.hk_license || {};
+    // 相容性處理：如果舊記錄沒有 hkMiscTotal，重新計算
+    const safeHkMiscTotal = results.hkMiscTotal !== undefined 
+        ? results.hkMiscTotal 
+        : Object.values(hkMiscFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0);
+    
+    const safeHkLicenseTotal = results.hkLicenseTotal !== undefined
+        ? results.hkLicenseTotal
+        : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
 
     return (
         <div className="fixed inset-0 z-[100] bg-gray-100 overflow-auto flex flex-col items-center p-4 md:p-8">
@@ -266,21 +281,21 @@ const PrintableReport = ({ data, onClose }) => {
                         <div>
                             <h4 className="font-bold text-gray-700 border-b-2 border-gray-200 pb-1 mb-2">香港雜費</h4>
                             <ul className="text-sm space-y-1">
-                                {Object.entries(fees.hk_misc).map(([k, v]) => (
+                                {Object.entries(hkMiscFees).map(([k, v]) => (
                                     <li key={k} className="flex justify-between border-b border-dashed border-gray-200 py-1 last:border-0"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded mt-1"><span>小計</span><span>{fmt(results.hkMiscTotal)}</span></li>
+                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded mt-1"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
                         <div>
                             <h4 className="font-bold text-gray-700 border-b-2 border-gray-200 pb-1 mb-2">出牌費用</h4>
                             <ul className="text-sm space-y-1">
-                                {Object.entries(fees.hk_license).map(([k, v]) => (
+                                {Object.entries(hkLicenseFees).map(([k, v]) => (
                                     <li key={k} className="flex justify-between border-b border-dashed border-gray-200 py-1 last:border-0"><span className="text-gray-600">{v.label}</span><span>${v.val}</span></li>
                                 ))}
                                 <li className="flex justify-between"><span className="text-gray-600">首次登記稅 (A1)</span><span>{fmt(results.frt)}</span></li>
                                 <li className="text-xs text-gray-400 text-right mb-1">(PRP: ${vals.prp})</li>
-                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(results.hkLicenseTotal)}</span></li>
+                                <li className="flex justify-between font-bold bg-gray-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
                             </ul>
                         </div>
                     </div>
@@ -525,16 +540,7 @@ export default function App() {
   // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
-      // Merge current state with overrides. Note: rates, fees etc are from closure unless overridden.
-      // But for Inventory handlers, we pass the NEW inventory explicitly.
-      const dataToSave = { 
-          rates, 
-          fees, 
-          inventory, 
-          appConfig,
-          ...overrides
-      };
-
+      const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
       try { 
           await setDoc(getSettingsRef(), dataToSave, { merge: true }); 
           showMsg("設定已儲存"); 
@@ -597,6 +603,10 @@ export default function App() {
       setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license);
       setAttachments(item.attachments || []); 
       setActiveTab('calculator'); showMsg("記錄已載入");
+  };
+
+  const generateReport = (item) => {
+      setReportData(item);
   };
 
   // Inventory Handlers - FIXED: Calculate new state and save immediately
@@ -786,10 +796,7 @@ export default function App() {
                                       <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.country}</span>
                                       <span className="text-xs text-gray-500">{item.date}</span>
                                       <div className="font-bold text-gray-800 mt-1">{item.details.manufacturer} {item.details.model} <span className="font-normal text-sm text-gray-500">{item.details.year}</span></div>
-                                      <div className="text-xs text-gray-400 mt-0.5 flex gap-2">
-                                        <span>{item.details.chassisNo || 'No Chassis'}</span>
-                                        {item.details.engineCapacity && <span>| {item.details.engineCapacity}cc</span>}
-                                      </div>
+                                      <div className="text-xs text-gray-400 mt-0.5">{item.details.chassisNo}</div>
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-1 text-xs text-purple-600"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                   </div>
                                   <div className="flex gap-1">
