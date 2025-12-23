@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, Key, Printer, Upload, Paperclip, File as FileIcon, Image as ImageIcon, BarChart3, TrendingUp, PieChart, Zap } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -18,27 +18,6 @@ const MANUAL_FIREBASE_CONFIG = {
 };
 
 const APP_ID_PATH = 'hk-car-dealer-app';
-
-// --- Market Data (2024-2025) ---
-const MARKET_DATA = {
-    overview: [
-        { year: '2024', total: 44200, evShare: 64.3, topBrand: 'Tesla' },
-        { year: '2025 (預測)', total: 41500, evShare: 70.5, topBrand: 'BYD' }
-    ],
-    brands_2025_1H: [
-        { name: 'BYD', units: 3937, share: 18.0, change: '+22.5%', color: 'bg-green-500' },
-        { name: 'Tesla', units: 3822, share: 17.5, change: '-37.7%', color: 'bg-red-500' },
-        { name: 'BMW', units: 2244, share: 10.2, change: '+29.8%', color: 'bg-blue-500' },
-        { name: 'Toyota', units: 1867, share: 8.5, change: '+46.5%', color: 'bg-red-600' }, // 雖然MPV跌，但整體靠混能支撐
-        { name: 'Mercedes-Benz', units: 1674, share: 7.6, change: '-5.2%', color: 'bg-gray-500' },
-        { name: 'XPeng', units: 1301, share: 5.9, change: '+159.5%', color: 'bg-orange-500' }
-    ],
-    insights: [
-        { title: "電動車市佔率突破 70%", desc: "2025年數據顯示，每10部新登記私家車中有7部為電動車，傳統燃油車生存空間進一步被壓縮。", type: "trend" },
-        { title: "國產 MPV 重新定義市場", desc: "2025年9月數據顯示，Toyota Alphard 跌出 MPV 三甲。XPeng X9 (72輛)、Zeekr 009 (55輛)、Denza D9 (49輛) 瓜分了豪華保姆車市場。", type: "warning" },
-        { title: "BYD 超越 Tesla", desc: "憑藉海豹 (Seal) 及海獅 (Sealion) 等多款車型，BYD 在 2025 年多次蟬聯單月銷量冠軍，打破 Tesla 長期壟斷。", type: "info" }
-    ]
-};
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, DE: 8.6 };
@@ -65,7 +44,7 @@ const DEFAULT_FEES = {
         misc: { label: '雜項支出', val: '1000' }
     },
     hk_license: {
-        licenseFee: { label: '政府牌費', val: '5794' },
+        licenseFee: { label: '政府牌費', val: '5794' }, // 預設值
         insurance: { label: '保險', val: '2000' }
     }
   },
@@ -112,6 +91,7 @@ const DEFAULT_INVENTORY = {
 const calculateFRT = (prp) => {
     let v = parseFloat(prp) || 0;
     let t = 0;
+    // 香港首次登記稅累進稅率
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.46; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 150000); t += taxable * 0.86; v -= taxable; }
     if (v > 0) { let taxable = Math.min(v, 200000); t += taxable * 1.15; v -= taxable; }
@@ -119,6 +99,7 @@ const calculateFRT = (prp) => {
     return t;
 };
 
+// 2025 香港汽油私家車牌費計算 (以12個月計)
 const getLicenseFeeByCC = (cc) => {
     const val = parseFloat(cc);
     if (!val) return 0;
@@ -142,6 +123,7 @@ const fileToBase64 = (file) => {
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-gray-800" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Icon className={`w-5 h-5 ${color}`} /><h3 className="font-bold text-gray-700">{title}</h3></div>;
 
+// InputGroup with Comma Formatting
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
   const displayValue = useMemo(() => {
     if (value === '' || value === null || value === undefined) return '';
@@ -229,6 +211,7 @@ const PrintableReport = ({ data, onClose }) => {
 
     const handlePrint = () => window.print();
 
+    // 安全訪問費用物件
     const hkMiscFees = fees.hk_misc || {};
     const hkLicenseFees = fees.hk_license || {};
     const safeHkMiscTotal = results.hkMiscTotal !== undefined ? results.hkMiscTotal : Object.values(hkMiscFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0);
@@ -354,85 +337,6 @@ const PrintableReport = ({ data, onClose }) => {
     );
 };
 
-// --- MARKET ANALYSIS COMPONENT (NEW) ---
-const MarketAnalysis = () => {
-    // 簡單的比例計算 CSS
-    const getWidth = (val, max) => `${(val / max) * 100}%`;
-    const maxUnits = Math.max(...MARKET_DATA.brands_2025_1H.map(b => b.units));
-
-    return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Overview Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {MARKET_DATA.overview.map((data, idx) => (
-                    <Card key={idx} className="p-5 border-t-4 border-blue-500">
-                        <h3 className="text-lg font-bold text-gray-700 mb-4">{data.year} 年度概覽</h3>
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500 text-sm">新車登記總數</span>
-                                <span className="text-2xl font-bold text-gray-900">{data.total.toLocaleString()} <span className="text-xs font-normal text-gray-400">輛</span></span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500 text-sm">電動車 (EV) 市佔率</span>
-                                <span className="text-xl font-bold text-green-600">{data.evShare}%</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500 text-sm">銷售冠軍品牌</span>
-                                <span className="text-lg font-bold text-blue-600">{data.topBrand}</span>
-                            </div>
-                        </div>
-                    </Card>
-                ))}
-            </div>
-
-            {/* Brand Performance Chart */}
-            <Card className="p-6">
-                <SectionHeader icon={BarChart3} title="2025年上半年 品牌銷量排行" />
-                <div className="space-y-5 mt-4">
-                    {MARKET_DATA.brands_2025_1H.map((brand, idx) => (
-                        <div key={idx}>
-                            <div className="flex justify-between text-sm mb-1">
-                                <span className="font-bold text-gray-700 flex items-center gap-2">
-                                    {idx + 1}. {brand.name}
-                                    {brand.change.startsWith('+') ? <span className="text-green-500 text-xs bg-green-50 px-1 rounded">{brand.change}</span> : <span className="text-red-500 text-xs bg-red-50 px-1 rounded">{brand.change}</span>}
-                                </span>
-                                <span className="text-gray-500">{brand.units} 輛 ({brand.share}%)</span>
-                            </div>
-                            <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
-                                <div 
-                                    className={`h-full ${brand.color}`} 
-                                    style={{ width: getWidth(brand.units, maxUnits) }}
-                                ></div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </Card>
-
-            {/* Market Insights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {MARKET_DATA.insights.map((insight, idx) => (
-                    <Card key={idx} className={`p-4 border-l-4 ${insight.type === 'trend' ? 'border-green-500' : insight.type === 'warning' ? 'border-orange-500' : 'border-blue-500'}`}>
-                        <div className="flex items-start gap-3">
-                            {insight.type === 'trend' ? <TrendingUp className="w-6 h-6 text-green-600" /> : 
-                             insight.type === 'warning' ? <AlertTriangle className="w-6 h-6 text-orange-600" /> : 
-                             <Info className="w-6 h-6 text-blue-600" />}
-                            <div>
-                                <h4 className="font-bold text-gray-800 text-sm mb-1">{insight.title}</h4>
-                                <p className="text-xs text-gray-600 leading-relaxed">{insight.desc}</p>
-                            </div>
-                        </div>
-                    </Card>
-                ))}
-            </div>
-            
-            <div className="text-center text-xs text-gray-400 mt-4">
-                資料來源：香港統計處、運輸署 (整合截至 2025年10月)
-            </div>
-        </div>
-    );
-};
-
 // --- MAIN APP ---
 export default function App() {
   const [db, setDb] = useState(null);
@@ -441,10 +345,12 @@ export default function App() {
   const [saveMsg, setSaveMsg] = useState(null);
   const [modal, setModal] = useState(null);
   
+  // Data Key
   const [dataKey, setDataKey] = useState(() => { try { return localStorage.getItem('hk_car_dealer_key') || 'demo-shop'; } catch(e) { return 'demo-shop'; } });
   const [isKeyEditing, setIsKeyEditing] = useState(false);
   const [tempKey, setTempKey] = useState('');
 
+  // App Data
   const [activeTab, setActiveTab] = useState('calculator');
   const [country, setCountry] = useState('JP');
   const [rates, setRates] = useState(DEFAULT_RATES);
@@ -454,16 +360,21 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [reportData, setReportData] = useState(null);
 
+  // Calculator Inputs
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
   
+  // Split Fees State
   const [currOriginFees, setCurrOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
   const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', engineCapacity: '', exteriorColor: '', interiorColor: '' });
+  
+  // Attachments State
   const [attachments, setAttachments] = useState([]);
 
+  // Inventory UI
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingMfr, setEditingMfr] = useState(null);
   const [newModel, setNewModel] = useState({ id: '', years: '', codes: '' });
@@ -473,6 +384,7 @@ export default function App() {
       setTimeout(() => setSaveMsg(null), 3000);
   };
 
+  // Firebase Init
   useEffect(() => {
       const init = async () => {
           try {
@@ -490,6 +402,7 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
@@ -507,6 +420,7 @@ export default function App() {
       return () => unsub();
   }, [db, dataKey, getSettingsRef]);
 
+  // Sync History
   useEffect(() => {
       const ref = getHistoryRef();
       if (!ref) return;
@@ -519,6 +433,7 @@ export default function App() {
       return () => unsub();
   }, [db, dataKey, getHistoryRef]);
 
+  // Sync Fees
   useEffect(() => {
       if (fees[country]) {
           setCurrOriginFees(fees[country].origin);
@@ -530,6 +445,7 @@ export default function App() {
       }
   }, [country, fees]);
   
+  // Auto-calculate License Fee based on CC (2025 Rates)
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -555,16 +471,34 @@ export default function App() {
     const currentCount = attachments.length;
     const maxFiles = appConfig.maxFiles || 5;
     const maxSizeKB = appConfig.maxFileSizeKB || 500;
-    if (currentCount + files.length > maxFiles) return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
+
+    if (currentCount + files.length > maxFiles) {
+        return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
+    }
+
     const newAttachments = [];
+    
     for (const file of files) {
-        if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error'); continue; }
+        if (file.size > maxSizeKB * 1024) {
+            showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error');
+            continue;
+        }
         try {
             const base64 = await fileToBase64(file);
-            newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 });
-        } catch (error) { console.error("File reading error", error); }
+            newAttachments.push({
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: base64
+            });
+        } catch (error) {
+            console.error("File reading error", error);
+        }
     }
-    if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
+
+    if (newAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...newAttachments]);
+    }
     e.target.value = null; 
   };
 
@@ -575,35 +509,77 @@ export default function App() {
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp); 
+  
   let originTotal = 0;
   Object.values(currOriginFees || {}).forEach(v => originTotal += (parseFloat(v.val) || 0));
   const originTotalHKD = originTotal * rate;
+
   let hkMiscTotal = 0;
   Object.values(currHkMiscFees || {}).forEach(v => hkMiscTotal += (parseFloat(v.val) || 0));
+  
   let hkLicenseTotal = 0; 
   Object.values(currHkLicenseFees || {}).forEach(v => hkLicenseTotal += (parseFloat(v.val) || 0));
   const totalLicenseCost = hkLicenseTotal + frt;
+
   const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal + frt;
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
+  // --- NEW: Save Config Helper to handle specific updates (FIXED: removed merge: true for inventory updates) ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
-      const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
-      try { await setDoc(getSettingsRef(), dataToSave, { merge: true }); showMsg("設定已儲存"); } catch(e) { showMsg("儲存失敗", "error"); }
+      
+      // If we are overriding inventory, we want to REPLACE it to handle deletions correctly.
+      // However, to be safe, we always merge everything ELSE, but for inventory we rely on the passed object being complete.
+      // Firestore setDoc with merge: true merges map fields recursively, which causes the deletion issue.
+      // Solution: We read the full state from our closure, apply overrides, and setDoc WITHOUT merge.
+      // BUT: 'rates', 'fees', etc are from closure which might be stale if called rapidly.
+      // Better: Use updateDoc for specific fields? No, user might not have doc yet.
+      
+      // The most robust way for this simple app is to construct the FULL document and set it.
+      // We assume local state 'inventory' (plus overrides) is the truth.
+      
+      // Calculate the final state to save
+      const finalInventory = overrides.inventory || inventory;
+      const finalRates = overrides.rates || rates;
+      const finalFees = overrides.fees || fees;
+      const finalConfig = overrides.appConfig || appConfig;
+
+      const dataToSave = { 
+          rates: finalRates, 
+          fees: finalFees, 
+          inventory: finalInventory, 
+          appConfig: finalConfig 
+      };
+
+      try { 
+          // 關鍵修正：移除 { merge: true }，改為直接覆蓋整個設定文件。
+          // 這樣當我們從 inventory 中刪除一個 key (品牌) 時，它在資料庫中也會被移除。
+          await setDoc(getSettingsRef(), dataToSave); 
+          showMsg("設定已儲存"); 
+      } catch(e) { 
+          showMsg("儲存失敗", "error"); 
+      }
   };
 
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接資料庫", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
+      
       const record = {
           ts: Date.now(),
           date: new Date().toLocaleString('zh-HK'),
           timestamp: serverTimestamp(),
           country, details,
           vals: { carPrice, prp, rate },
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
+          fees: { 
+            origin: currOriginFees, 
+            hk_misc: currHkMiscFees,
+            hk_license: currHkLicenseFees
+          },
+          results: { 
+            carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost 
+          },
           attachments: attachments, 
           isLocked: false
       };
@@ -614,6 +590,7 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
+  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -629,22 +606,70 @@ export default function App() {
   };
 
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
+
   const deleteHistoryItem = (item) => {
       if (item.isLocked) return showMsg("記錄已鎖定", "error");
       setModal({ title: "刪除記錄", message: "確定要刪除此記錄嗎？", type: "danger", onConfirm: async () => { try { await deleteDoc(doc(getHistoryRef(), item.id)); setModal(null); showMsg("已刪除"); } catch(e) { showMsg("刪除失敗", "error"); } } });
   };
+
   const loadHistoryItem = (item) => {
       setCountry(item.country); setCarPrice(item.vals.carPrice); setPrp(item.vals.prp); setDetails(item.details);
       setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license);
       setAttachments(item.attachments || []); 
       setActiveTab('calculator'); showMsg("記錄已載入");
   };
-  const generateReport = (item) => { setReportData(item); };
 
-  const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
-  const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
-  const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
-  const deleteModel = (mfr, modelId) => { const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } }; setInventory(newInventory); saveConfig({ inventory: newInventory }); };
+  const generateReport = (item) => {
+      setReportData(item);
+  };
+
+  // Inventory Handlers - FIXED: Calculate new state and save immediately
+  const addMfr = () => { 
+      if (!newManufacturer) return; 
+      const name = newManufacturer.trim(); 
+      if (inventory[name]) return showMsg("已存在", "error"); 
+      
+      const newInventory = { ...inventory, [name]: { models: [] } };
+      setInventory(newInventory); 
+      setNewManufacturer(''); 
+      saveConfig({ inventory: newInventory });
+  };
+
+  const deleteMfr = (mfr) => { 
+      setModal({ 
+          title: "刪除品牌", 
+          message: `確定刪除 ${mfr}？`, 
+          type: "danger", 
+          onConfirm: () => { 
+              const newInventory = {...inventory}; 
+              delete newInventory[mfr]; 
+              setInventory(newInventory); 
+              setEditingMfr(null); 
+              setModal(null); 
+              saveConfig({ inventory: newInventory });
+          } 
+      }); 
+  };
+
+  const addModel = (mfr) => { 
+      if(!newModel.id) return; 
+      const newCar = { 
+        id: newModel.id.trim(), 
+        years: newModel.years.split(',').filter(Boolean), 
+        codes: newModel.codes.split(',').filter(Boolean) 
+      }; 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } };
+      
+      setInventory(newInventory); 
+      setNewModel({ id: '', years: '', codes: '' }); 
+      saveConfig({ inventory: newInventory });
+  };
+
+  const deleteModel = (mfr, modelId) => { 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } };
+      setInventory(newInventory); 
+      saveConfig({ inventory: newInventory });
+  };
   
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
@@ -676,7 +701,7 @@ export default function App() {
                   </div>
               </div>
               <div className="flex bg-slate-800 rounded-lg p-1 self-start">
-                  {[{id:'calculator', icon: Calculator, label:'計算'}, {id:'history', icon: List, label:`記錄 (${history.length})`}, {id:'market', icon: PieChart, label: '市場分析'}, {id:'settings', icon: Settings, label:'設定'}].map(t => (
+                  {[{id:'calculator', icon: Calculator, label:'計算'}, {id:'history', icon: List, label:`記錄 (${history.length})`}, {id:'settings', icon: Settings, label:'設定'}].map(t => (
                       <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm transition ${activeTab===t.id ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}><t.icon className="w-4 h-4" /><span className="hidden sm:inline">{t.label}</span></button>
                   ))}
               </div>
@@ -686,11 +711,12 @@ export default function App() {
       {saveMsg && <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded shadow-lg flex items-center gap-2 text-white text-sm ${saveMsg.type === 'error' ? 'bg-red-500' : 'bg-green-600'} print:hidden`}>{saveMsg.type === 'error' ? <AlertTriangle className="w-4 h-4"/> : <CheckCircle className="w-4 h-4"/>}{saveMsg.msg}</div>}
 
       <div className="max-w-7xl mx-auto p-4 space-y-6 print:hidden">
-          {activeTab === 'market' && <MarketAnalysis />}
-
+          {/* === CALCULATOR TAB === */}
           {activeTab === 'calculator' && (
               <div className="animate-in fade-in duration-300 space-y-6">
+                  {/* Grid Layout for Desktop */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left Column: Car Details & Core Costs */}
                       <div className="lg:col-span-7 space-y-6">
                            <div className="flex gap-2 overflow-x-auto pb-1">
                               {Object.values(COUNTRIES).map(c => (
@@ -705,8 +731,11 @@ export default function App() {
                                   <div className="col-span-2 md:col-span-2"><AutocompleteInput label="型號" value={details.model} onChange={v => setDetails(d => ({...d, model:v}))} options={inventory[details.manufacturer]?.models.map(m=>m.id) || []} /></div>
                                   <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
                                   <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
+                                  
+                                  {/* Colors & New Fields */}
                                   <InputGroup label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} type="text" placeholder="e.g. White" />
                                   <InputGroup label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} type="text" placeholder="e.g. Black" />
+                                  
                                   <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="e.g. 2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="e.g. 7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
@@ -719,18 +748,25 @@ export default function App() {
                               <div className="mt-2 text-right text-sm font-medium text-gray-600">車價折合: <span className="text-blue-600 text-lg">{fmt(carPriceHKD)}</span></div>
                           </Card>
                           
+                           {/* File Upload Section */}
                           <Card className="p-4 border-l-4 border-purple-500">
                               <SectionHeader icon={Paperclip} title={`文件上傳 (最多 ${appConfig.maxFiles} 個)`} color="text-purple-700" />
                               <div className="flex flex-col gap-4">
                                   <label className="flex items-center justify-center w-full h-16 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition">
-                                      <div className="flex flex-col items-center pt-1 pb-2"><Upload className="w-5 h-5 text-gray-400 mb-1" /><p className="text-[10px] text-gray-500">點擊上傳圖片/PDF</p></div>
+                                      <div className="flex flex-col items-center pt-1 pb-2">
+                                          <Upload className="w-5 h-5 text-gray-400 mb-1" />
+                                          <p className="text-[10px] text-gray-500">點擊上傳圖片/PDF</p>
+                                      </div>
                                       <input type="file" className="hidden" multiple onChange={handleFileUpload} accept="image/*,.pdf,.doc,.docx" />
                                   </label>
                                   {attachments.length > 0 && (
                                       <div className="grid grid-cols-2 gap-2">
                                           {attachments.map((file, idx) => (
                                               <div key={idx} className="flex items-center justify-between p-2 bg-gray-100 rounded border text-xs">
-                                                  <div className="flex items-center gap-2 overflow-hidden">{file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500"/> : <FileIcon className="w-4 h-4 text-gray-500"/>}<span className="truncate max-w-[80px]" title={file.name}>{file.name}</span></div>
+                                                  <div className="flex items-center gap-2 overflow-hidden">
+                                                      {file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500"/> : <FileIcon className="w-4 h-4 text-gray-500"/>}
+                                                      <span className="truncate max-w-[80px]" title={file.name}>{file.name}</span>
+                                                  </div>
                                                   <button onClick={() => removeAttachment(idx)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4"/></button>
                                               </div>
                                           ))}
@@ -740,6 +776,7 @@ export default function App() {
                           </Card>
                       </div>
 
+                      {/* Right Column: Fees & Totals */}
                       <div className="lg:col-span-5 space-y-4">
                           <Card className="p-4"><SectionHeader icon={Globe} title="當地雜費" color="text-indigo-600" /><div className="grid grid-cols-2 gap-x-4 gap-y-2">{Object.entries(currOriginFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrOriginFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">折合: {fmt(originTotalHKD)}</div></Card>
                           <Card className="p-4"><SectionHeader icon={Ship} title="香港雜費 (到港成本)" color="text-green-600" /><div className="grid grid-cols-2 gap-x-4 gap-y-2">{Object.entries(currHkMiscFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkMiscFees(p => ({...p, [k]: {...p[k], val}}))} />))}</div><div className="text-right text-xs text-gray-500 mt-2">小計: {fmt(hkMiscTotal)}</div></Card>
@@ -747,11 +784,16 @@ export default function App() {
                       </div>
                   </div>
 
+                  {/* Sticky Footer Total Bar */}
                   <div className="sticky bottom-0 bg-slate-800 text-white p-4 rounded-xl shadow-xl flex flex-col justify-between gap-4 z-10">
                       <div className="flex justify-between w-full border-b border-slate-600 pb-2 mb-1"><span className="text-sm text-gray-300">車輛到港成本 (含A1稅):</span><span className="text-lg font-semibold">{fmt(landedCost)}</span></div>
                       <div className="flex justify-between w-full items-end">
                           <div><div className="text-xs text-gray-400">總成本 (Total Cost):</div><div className="text-3xl font-bold leading-none text-green-400">{fmt(totalCost)}</div></div>
-                          <div className="flex gap-2"><button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><Printer className="w-4 h-4"/> 報告</button><button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><PlusCircle className="w-4 h-4"/> 記錄</button></div>
+                          <div className="flex gap-2">
+                              {/* 確保 generateCurrentReport 被正確呼叫 */}
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><Printer className="w-4 h-4"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-sm"><PlusCircle className="w-4 h-4"/> 記錄</button>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -768,7 +810,10 @@ export default function App() {
                                       <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded mr-2">{item.country}</span>
                                       <span className="text-xs text-gray-500">{item.date}</span>
                                       <div className="font-bold text-gray-800 mt-1">{item.details.manufacturer} {item.details.model} <span className="font-normal text-sm text-gray-500">{item.details.year}</span></div>
-                                      <div className="text-xs text-gray-400 mt-0.5 flex gap-2"><span>{item.details.chassisNo || 'No Chassis'}</span>{item.details.engineCapacity && <span>| {item.details.engineCapacity}cc</span>}</div>
+                                      <div className="text-xs text-gray-400 mt-0.5 flex gap-2">
+                                        <span>{item.details.chassisNo || 'No Chassis'}</span>
+                                        {item.details.engineCapacity && <span>| {item.details.engineCapacity}cc</span>}
+                                      </div>
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-1 text-xs text-purple-600"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                   </div>
                                   <div className="flex gap-1">
@@ -795,15 +840,44 @@ export default function App() {
                        <div className="text-sm text-gray-600 mb-2">當前資料帳號</div>
                        <div className="font-mono text-lg font-bold text-blue-800 bg-blue-50 p-2 rounded">{dataKey}</div>
                    </Card>
-                   <Card className="p-4 border-l-4 border-purple-500"><SectionHeader icon={Settings} title="系統設定" color="text-purple-700" /><div className="grid grid-cols-2 gap-4"><InputGroup label="最大附件數量" value={appConfig.maxFiles} onChange={v => setAppConfig(p => ({...p, maxFiles: v}))} /><InputGroup label="最大附件大小 (KB)" value={appConfig.maxFileSizeKB} onChange={v => setAppConfig(p => ({...p, maxFileSizeKB: v}))} /></div></Card>
+                   <Card className="p-4 border-l-4 border-purple-500">
+                       <SectionHeader icon={Settings} title="系統設定" color="text-purple-700" />
+                       <div className="grid grid-cols-2 gap-4">
+                           <InputGroup label="最大附件數量" value={appConfig.maxFiles} onChange={v => setAppConfig(p => ({...p, maxFiles: v}))} />
+                           <InputGroup label="最大附件大小 (KB)" value={appConfig.maxFileSizeKB} onChange={v => setAppConfig(p => ({...p, maxFileSizeKB: v}))} />
+                       </div>
+                   </Card>
+                   {/* Inventory Config & Rate Config & Fee Config (Kept for brevity, same logic as before) */}
                    <Card className="p-4 border-l-4 border-green-500">
                        <SectionHeader icon={Car} title="車輛庫存管理" color="text-green-700" />
                        <div className="flex gap-2 mb-4"><input value={newManufacturer} onChange={e => setNewManufacturer(e.target.value)} placeholder="新增品牌" className="flex-1 text-sm p-2 border rounded" /><button onClick={addMfr} disabled={!newManufacturer} className="bg-green-600 text-white px-3 rounded text-sm">新增</button></div>
+                       {/* Inventory Lists ... */}
                        <div className="space-y-2">
                            {Object.keys(inventory).map(mfr => (
                                <div key={mfr} className="border rounded-lg bg-gray-50 overflow-hidden">
-                                   <div className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100" onClick={() => setEditingMfr(editingMfr === mfr ? null : mfr)}><span className="font-bold text-sm">{mfr} ({inventory[mfr]?.models?.length || 0})</span><div className="flex gap-2"><Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" onClick={(e) => {e.stopPropagation(); deleteMfr(mfr)}} /><ChevronDown className={`w-4 h-4 transition ${editingMfr === mfr ? 'rotate-180' : ''}`} /></div></div>
-                                   {editingMfr === mfr && (<div className="p-3 border-t bg-white"><div className="grid grid-cols-4 gap-2 mb-3"><input placeholder="型號" value={newModel.id} onChange={e => setNewModel(m => ({...m, id: e.target.value}))} className="text-xs p-1.5 border rounded" /><input placeholder="年份" value={newModel.years} onChange={e => setNewModel(m => ({...m, years: e.target.value}))} className="text-xs p-1.5 border rounded" /><input placeholder="代號" value={newModel.codes} onChange={e => setNewModel(m => ({...m, codes: e.target.value}))} className="text-xs p-1.5 border rounded" /><button onClick={() => addModel(mfr)} disabled={!newModel.id} className="bg-blue-500 text-white rounded text-xs hover:bg-blue-600">新增</button></div>{(inventory[mfr]?.models || []).map(m => (<div key={m.id} className="flex justify-between items-center text-xs py-1 border-b last:border-0"><span><b>{m.id}</b> <span className="text-gray-500">[{m.codes.join(',')}]</span></span><X className="w-3 h-3 text-red-400 cursor-pointer hover:text-red-600" onClick={() => deleteModel(mfr, m.id)} /></div>))}</div>)}
+                                   <div className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100" onClick={() => setEditingMfr(editingMfr === mfr ? null : mfr)}>
+                                       <span className="font-bold text-sm">{mfr} ({inventory[mfr]?.models?.length || 0})</span>
+                                       <div className="flex gap-2">
+                                            <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" onClick={(e) => {e.stopPropagation(); deleteMfr(mfr)}} />
+                                            <ChevronDown className={`w-4 h-4 transition ${editingMfr === mfr ? 'rotate-180' : ''}`} />
+                                       </div>
+                                   </div>
+                                   {editingMfr === mfr && (
+                                       <div className="p-3 border-t bg-white">
+                                           <div className="grid grid-cols-4 gap-2 mb-3">
+                                               <input placeholder="型號" value={newModel.id} onChange={e => setNewModel(m => ({...m, id: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <input placeholder="年份" value={newModel.years} onChange={e => setNewModel(m => ({...m, years: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <input placeholder="代號" value={newModel.codes} onChange={e => setNewModel(m => ({...m, codes: e.target.value}))} className="text-xs p-1.5 border rounded" />
+                                               <button onClick={() => addModel(mfr)} disabled={!newModel.id} className="bg-blue-500 text-white rounded text-xs hover:bg-blue-600">新增</button>
+                                           </div>
+                                           {(inventory[mfr]?.models || []).map(m => (
+                                               <div key={m.id} className="flex justify-between items-center text-xs py-1 border-b last:border-0">
+                                                   <span><b>{m.id}</b> <span className="text-gray-500">[{m.codes.join(',')}]</span></span>
+                                                   <X className="w-3 h-3 text-red-400 cursor-pointer hover:text-red-600" onClick={() => deleteModel(mfr, m.id)} />
+                                               </div>
+                                           ))}
+                                       </div>
+                                   )}
                                </div>
                            ))}
                        </div>
