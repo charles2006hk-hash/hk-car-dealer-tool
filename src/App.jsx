@@ -163,7 +163,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -244,34 +244,32 @@ const PrintableReport = ({ data, onClose, logo }) => {
         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
-                    /* 強制 A4 尺寸 */
                     @page { 
                         size: A4 portrait; 
                         margin: 0;
                     }
                     
-                    /* 基礎重置 */
                     html, body { 
-                        height: auto;
-                        min-height: 100%;
+                        height: 100%;
                         margin: 0 !important; 
                         padding: 0 !important; 
-                        overflow: visible !important; 
+                        overflow: visible !important;
                         background: white;
                     }
 
-                    /* 1. 隱藏所有非報表內容 (關鍵) */
+                    /* 1. HIDE EVERYTHING ON PAGE */
                     body * {
                         visibility: hidden;
                     }
 
-                    /* 2. 強制報表容器可見並絕對定位 */
+                    /* 2. SHOW ONLY REPORT CONTAINER AND CHILDREN */
                     #printable-report-container, #printable-report-container * {
                         visibility: visible !important;
                     }
 
+                    /* 3. POSITION REPORT CONTAINER ABSOLUTELY AT TOP LEFT */
                     #printable-report-container { 
-                        position: fixed !important; 
+                        position: absolute !important; 
                         left: 0 !important; 
                         top: 0 !important; 
                         width: 210mm !important; 
@@ -282,25 +280,18 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         z-index: 999999;
                     }
 
-                    /* 3. 調整列印版面 (縮小邊距以防溢出) */
+                    /* 4. CONTENT ADJUSTMENTS FOR A4 */
                     #printable-report { 
-                        padding: 10mm 15mm !important; 
-                        box-shadow: none !important; 
-                        border: none !important; 
-                        width: 100% !important;
-                        height: 100% !important;
+                        padding: 10mm 15mm !important; /* Slightly reduced padding */
+                        height: 100%;
                         display: flex;
                         flex-direction: column;
                         justify-content: space-between;
                     }
                     
-                    /* 4. 隱藏操作按鈕 */
                     .no-print { display: none !important; }
-                    
-                    /* 5. 防止分頁 */
                     .page-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
                     
-                    /* 6. 強制背景顏色列印 */
                     * { 
                         -webkit-print-color-adjust: exact !important; 
                         print-color-adjust: exact !important; 
@@ -323,7 +314,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     </div>
 
-                    {/* Car Details - Compact Grid */}
+                    {/* Car Details */}
                     <div className="mb-4">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
@@ -504,15 +495,30 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings
+  // Sync Settings - **AUTO MIGRATION FIX**
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
+              let loadedFees = d.fees;
+              
+              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
+              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
+                  console.log("Detected old fee structure. Migrating to new structure...");
+                  // 使用新結構覆蓋舊結構
+                  loadedFees = {
+                      ...loadedFees,
+                      UK: DEFAULT_FEES.UK,
+                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
+                  };
+                  setDoc(ref, { fees: loadedFees }, { merge: true });
+                  showMsg("系統已自動更新費用結構至最新版本");
+              }
+
               if(d.rates) setRates(d.rates);
-              if(d.fees) setFees(d.fees);
+              setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -762,6 +768,19 @@ export default function App() {
       saveConfig({ appConfig: { ...appConfig, logo: null } });
       showMsg("Logo 已移除");
   };
+
+  // --- Dynamic Favicon Effect ---
+  useEffect(() => {
+    if (appConfig.logo) {
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = appConfig.logo;
+    }
+  }, [appConfig.logo]);
 
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
