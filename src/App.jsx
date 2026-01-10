@@ -29,7 +29,6 @@ const COUNTRIES = {
   OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
-// 2. 確保 DEFAULT_FEES 是最新的結構 (UK 和 OT 使用新結構)
 const DEFAULT_FEES = {
   JP: {
     origin: { 
@@ -53,8 +52,8 @@ const DEFAULT_FEES = {
   UK: {
     origin: { 
         shipping: { label: '船運費', val: '1500' },
-        inspection: { label: '當地驗車', val: '300' }, // 1. 修正項目
-        other: { label: '其他費用', val: '200' }     // 1. 修正項目
+        inspection: { label: '當地驗車', val: '300' },
+        other: { label: '其他費用', val: '200' }
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -70,7 +69,7 @@ const DEFAULT_FEES = {
         insurance: { label: '保險', val: '2500' }
     }
   },
-  OT: { // 2. 其他國家 (跟英國結構一樣)
+  OT: {
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
@@ -245,44 +244,53 @@ const PrintableReport = ({ data, onClose, logo }) => {
         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
-                    @page { size: A4; margin: 0; }
-                    
-                    /* 1. 隱藏背景和所有非報表內容 */
-                    body { 
-                        visibility: hidden; 
-                        background: white !important; 
-                        margin: 0; 
-                        padding: 0;
+                    @page { 
+                        size: A4 portrait; 
+                        margin: 0;
                     }
-
-                    /* 2. 強制報表可見並定位到頁面頂部 */
-                    #printable-report-container { 
-                        visibility: visible !important; 
-                        position: fixed !important; 
-                        left: 0 !important; 
-                        top: 0 !important; 
-                        width: 210mm !important; 
-                        min-height: 297mm !important; 
+                    
+                    html, body { 
+                        height: auto;
+                        min-height: 100%;
                         margin: 0 !important; 
                         padding: 0 !important; 
-                        background: white !important; 
-                        z-index: 99999 !important;
+                        overflow: visible !important; 
+                        background: white;
+                    }
+
+                    /* 1. 隱藏所有非報表內容 */
+                    body > *:not(#printable-report-container) {
+                        display: none !important;
+                    }
+
+                    /* 2. 強制報表可見並定位 */
+                    #printable-report-container { 
+                        visibility: visible !important; 
+                        display: block !important;
+                        position: absolute; 
+                        left: 0; 
+                        top: 0; 
+                        width: 100%; /* A4 width */
+                        margin: 0; 
+                        padding: 0; 
+                        background: white; 
+                        z-index: 99999;
                     }
                     
-                    /* 確保報表內所有元素可見 */
                     #printable-report-container * { 
                         visibility: visible !important; 
                     }
 
                     #printable-report { 
-                        padding: 15mm 20mm; 
+                        padding: 10mm 15mm; 
                         box-shadow: none !important; 
                         border: none !important; 
+                        min-height: 290mm;
                     }
                     
                     .no-print { display: none !important; }
+                    .page-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
                     
-                    /* 3. 強制列印背景顏色 (Chrome/Safari) */
                     * { 
                         -webkit-print-color-adjust: exact !important; 
                         print-color-adjust: exact !important; 
@@ -391,8 +399,8 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     )}
 
-                    <div className="mt-auto">
-                         <div className="bg-white border-4 border-slate-800 rounded-xl p-6 space-y-4 break-inside-avoid shadow-lg">
+                    <div className="mt-auto page-break-inside-avoid">
+                         <div className="bg-white border-4 border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
                             <div className="flex justify-between items-center border-b-2 border-slate-300 pb-4">
                                 <div>
                                     <span className="text-slate-800 font-black block text-lg">車輛到港成本</span>
@@ -405,10 +413,10 @@ const PrintableReport = ({ data, onClose, logo }) => {
                                     <span className="text-blue-900 font-black block text-xl">預計總成本</span>
                                     <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wide">Total Cost (All Inclusive)</span>
                                 </div>
-                                <span className="text-4xl font-black text-blue-700 tracking-tighter">{fmt(results.totalCost)}</span>
+                                <span className="text-4xl font-black text-blue-800 tracking-tighter">{fmt(results.totalCost)}</span>
                             </div>
                         </div>
-                        <div className="mt-4 pt-4 border-t-2 border-slate-300 text-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <div className="mt-8 pt-6 border-t-2 border-slate-300 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">
                              <p>© {new Date().getFullYear()} HK Car Dealer Tool | Confidential Document</p>
                         </div>
                     </div>
@@ -540,7 +548,7 @@ export default function App() {
       }
   }, [country, fees]);
   
-  // Auto-calculate License Fee based on CC (2025 Rates)
+  // Auto-calculate License Fee based on CC
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -620,7 +628,6 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
       const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
