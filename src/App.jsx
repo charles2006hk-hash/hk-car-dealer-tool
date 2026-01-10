@@ -163,7 +163,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -244,11 +244,13 @@ const PrintableReport = ({ data, onClose, logo }) => {
         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
+                    /* 強制 A4 尺寸 */
                     @page { 
                         size: A4 portrait; 
                         margin: 0;
                     }
                     
+                    /* 基礎重置 */
                     html, body { 
                         height: auto;
                         min-height: 100%;
@@ -258,39 +260,47 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         background: white;
                     }
 
-                    /* 1. 隱藏所有非報表內容 */
-                    body > *:not(#printable-report-container) {
-                        display: none !important;
+                    /* 1. 隱藏所有非報表內容 (關鍵) */
+                    body * {
+                        visibility: hidden;
                     }
 
-                    /* 2. 強制報表可見並定位 */
+                    /* 2. 強制報表容器可見並絕對定位 */
+                    #printable-report-container, #printable-report-container * {
+                        visibility: visible !important;
+                    }
+
                     #printable-report-container { 
-                        visibility: visible !important; 
-                        display: block !important;
-                        position: absolute; 
-                        left: 0; 
-                        top: 0; 
-                        width: 100%; /* A4 width */
-                        margin: 0; 
-                        padding: 0; 
-                        background: white; 
-                        z-index: 99999;
-                    }
-                    
-                    #printable-report-container * { 
-                        visibility: visible !important; 
+                        position: fixed !important; 
+                        left: 0 !important; 
+                        top: 0 !important; 
+                        width: 210mm !important; 
+                        min-height: 297mm !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        background: white !important; 
+                        z-index: 999999;
                     }
 
+                    /* 3. 調整列印版面 (縮小邊距以防溢出) */
                     #printable-report { 
-                        padding: 10mm 15mm; 
+                        padding: 10mm 15mm !important; 
                         box-shadow: none !important; 
                         border: none !important; 
-                        min-height: 290mm;
+                        width: 100% !important;
+                        height: 100% !important;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
                     }
                     
+                    /* 4. 隱藏操作按鈕 */
                     .no-print { display: none !important; }
+                    
+                    /* 5. 防止分頁 */
                     .page-break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
                     
+                    /* 6. 強制背景顏色列印 */
                     * { 
                         -webkit-print-color-adjust: exact !important; 
                         print-color-adjust: exact !important; 
@@ -300,115 +310,119 @@ const PrintableReport = ({ data, onClose, logo }) => {
 
             <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full transform transition-transform">
                 <div id="printable-report" className="p-12 text-slate-900 h-full flex flex-col font-sans">
-                    <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
-                        <div><h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-md text-slate-700 font-bold">日期: {date}</p></div>
+                    {/* Header */}
+                    <div className="flex justify-between items-end border-b-4 border-slate-900 pb-4 mb-4">
+                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
-                             {/* Logo 放大顯示 */}
                              {logo ? (
-                                <img src={logo} alt="Company Logo" className="h-24 object-contain mb-2 ml-auto" />
+                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-2 ml-auto" />
                             ) : (
                                 <h2 className="text-2xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-8 h-8'/> HK Car Dealer</h2>
                             )}
-                            <p className="text-sm text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
+                            <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
                     </div>
 
-                    <div className="mb-8">
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-700 pl-3">車輛資料</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 text-sm bg-slate-100 p-6 rounded-xl border-2 border-slate-300">
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">品牌</span> <span className="font-bold text-lg text-black">{details.manufacturer}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">型號</span> <span className="font-bold text-lg text-black">{details.model}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">年份</span> <span className="font-bold text-lg text-black">{details.year}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">代號</span> <span className="font-bold text-lg text-black">{details.code}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">座位數</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
-                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
-                            <div className="col-span-2 border-t-2 border-slate-300 pt-3 mt-1 flex items-center gap-2"><span className="text-slate-600 text-xs font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-base text-black">{details.chassisNo || '-'}</span></div>
+                    {/* Car Details - Compact Grid */}
+                    <div className="mb-4">
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">品牌</span> <span className="font-bold text-base text-black">{details.manufacturer}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">型號</span> <span className="font-bold text-base text-black">{details.model}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">年份</span> <span className="font-bold text-base text-black">{details.year}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">代號</span> <span className="font-bold text-base text-black">{details.code}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位數</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
+                            <div className="col-span-2 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
                         </div>
                     </div>
 
-                    <div className="mb-8">
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-700 pl-3">核心成本</h3>
-                        <table className="w-full text-sm border-2 border-slate-300 rounded-lg overflow-hidden">
+                    {/* Core Costs */}
+                    <div className="mb-4">
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
+                        <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden">
                             <thead className="bg-slate-200 text-slate-900">
                                 <tr>
-                                    <th className="text-left py-3 px-4 font-black border-b-2 border-slate-400">項目</th>
-                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
-                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400">匯率</th>
-                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th>
+                                    <th className="text-left py-2 px-3 font-black border-b-2 border-slate-400">項目</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400">匯率</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th>
                                 </tr>
                             </thead>
                             <tbody className='divide-y divide-slate-300'>
                                 <tr>
-                                    <td className="py-3 px-4 font-bold text-slate-900">當地車價</td>
-                                    <td className="text-right px-4 font-mono font-bold">{vals.carPrice}</td>
-                                    <td className="text-right px-4 font-mono font-bold">{vals.rate}</td>
-                                    <td className="text-right px-4 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
+                                    <td className="py-2 px-3 font-bold text-slate-900">當地車價</td>
+                                    <td className="text-right px-3 font-mono font-bold">{vals.carPrice}</td>
+                                    <td className="text-right px-3 font-mono font-bold">{vals.rate}</td>
+                                    <td className="text-right px-3 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
                                 </tr>
                                 <tr>
-                                    <td className="py-3 px-4 font-bold text-slate-900">當地雜費 <span className='text-xs font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
-                                    <td className="text-right px-4 text-slate-500 font-bold">-</td>
-                                    <td className="text-right px-4 text-slate-500 font-bold">-</td>
-                                    <td className="text-right px-4 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
+                                    <td className="py-2 px-3 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
+                                    <td className="text-right px-3 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-3 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-3 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-10 mb-8">
+                    {/* Breakdown Grid */}
+                    <div className="grid grid-cols-2 gap-8 mb-4">
                         <div>
-                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-2 mb-3 text-sm uppercase tracking-wide">香港雜費</h4>
-                            <ul className="text-sm space-y-2">
+                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-1 mb-2 text-xs uppercase tracking-wide">香港雜費</h4>
+                            <ul className="text-xs space-y-1">
                                 {Object.entries(hkMiscFees).map(([k, v]) => (
                                     <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-2 mt-3 text-base bg-slate-100 p-2 rounded border border-slate-200"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
+                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-1 mt-2 text-sm bg-slate-100 p-1 rounded border border-slate-200"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-2 mb-3 text-sm uppercase tracking-wide">出牌費用</h4>
-                            <ul className="text-sm space-y-2">
+                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-1 mb-2 text-xs uppercase tracking-wide">出牌費用</h4>
+                            <ul className="text-xs space-y-1">
                                 {Object.entries(hkLicenseFees).map(([k, v]) => (
                                     <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between items-center bg-orange-100 -mx-2 px-2 py-1 rounded border border-orange-300"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
-                                <li className="text-xs text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${vals.prp})</li>
-                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-2 mt-2 text-base bg-slate-100 p-2 rounded border border-slate-200"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
+                                <li className="flex justify-between items-center bg-orange-100 -mx-1 px-2 py-1 rounded border border-orange-300"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
+                                <li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${vals.prp})</li>
+                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-1 mt-2 text-sm bg-slate-100 p-1 rounded border border-slate-200"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
                             </ul>
                         </div>
                     </div>
 
+                    {/* Attachments (Images) - Optimized for print space */}
                     {attachments && attachments.length > 0 && (
-                        <div className="mb-6 page-break-inside-avoid">
-                            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">附件文件</h3>
+                        <div className="mb-4 page-break-inside-avoid flex-grow-0">
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">附件圖片</h3>
                             <div className="grid grid-cols-4 gap-3">
-                                {attachments.map((file, idx) => (
-                                    <div key={idx} className="border-2 border-slate-200 rounded-lg p-1 flex flex-col items-center gap-1 bg-slate-50">
+                                {attachments.slice(0, 4).map((file, idx) => (
+                                    <div key={idx} className="border-2 border-slate-200 rounded-lg p-1 flex flex-col items-center gap-1 bg-slate-50 overflow-hidden">
                                         {file.type.startsWith('image/') ? (
-                                            <div className="w-full h-16 bg-white rounded overflow-hidden flex items-center justify-center border border-slate-200">
+                                            <div className="w-full h-20 bg-white rounded overflow-hidden flex items-center justify-center border border-slate-200">
                                                 <img src={file.data} className="w-full h-full object-cover" />
                                             </div>
                                         ) : (
-                                            <div className="w-full h-16 flex items-center justify-center bg-white rounded border border-slate-200 text-slate-400"><FileText className="w-6 h-6" /></div>
+                                            <div className="w-full h-20 flex items-center justify-center bg-white rounded border border-slate-200 text-slate-400"><FileText className="w-6 h-6" /></div>
                                         )}
-                                        <span className="truncate w-full text-[9px] text-center font-bold text-slate-700">{file.name}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
 
+                    {/* Footer Totals */}
                     <div className="mt-auto page-break-inside-avoid">
-                         <div className="bg-white border-4 border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                            <div className="flex justify-between items-center border-b-2 border-slate-300 pb-4">
+                         <div className="bg-white border-4 border-slate-800 rounded-xl p-6 space-y-3 shadow-lg">
+                            <div className="flex justify-between items-center border-b-2 border-slate-300 pb-3">
                                 <div>
                                     <span className="text-slate-800 font-black block text-lg">車輛到港成本</span>
                                     <span className="text-[10px] text-slate-600 font-bold uppercase tracking-wide">Landed Cost (含A1稅，不含牌費保險)</span>
                                 </div>
                                 <span className="text-2xl font-black text-slate-900 tracking-tight">{fmt(results.landedCost)}</span>
                             </div>
-                            <div className="flex justify-between items-center pt-2">
+                            <div className="flex justify-between items-center pt-1">
                                 <div>
                                     <span className="text-blue-900 font-black block text-xl">預計總成本</span>
                                     <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wide">Total Cost (All Inclusive)</span>
@@ -416,7 +430,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                                 <span className="text-4xl font-black text-blue-800 tracking-tighter">{fmt(results.totalCost)}</span>
                             </div>
                         </div>
-                        <div className="mt-8 pt-6 border-t-2 border-slate-300 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <div className="mt-4 pt-2 border-t-2 border-slate-300 text-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                              <p>© {new Date().getFullYear()} HK Car Dealer Tool | Confidential Document</p>
                         </div>
                     </div>
@@ -490,30 +504,15 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings - **AUTO MIGRATION FIX**
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
-              let loadedFees = d.fees;
-              
-              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
-              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
-                  console.log("Detected old fee structure. Migrating to new structure...");
-                  // 使用新結構覆蓋舊結構
-                  loadedFees = {
-                      ...loadedFees,
-                      UK: DEFAULT_FEES.UK,
-                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
-                  };
-                  setDoc(ref, { fees: loadedFees }, { merge: true });
-                  showMsg("系統已自動更新費用結構至最新版本");
-              }
-
               if(d.rates) setRates(d.rates);
-              setFees(loadedFees || DEFAULT_FEES);
+              if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -548,7 +547,7 @@ export default function App() {
       }
   }, [country, fees]);
   
-  // Auto-calculate License Fee based on CC
+  // Auto-calculate License Fee based on CC (2025 Rates)
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -628,10 +627,16 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
+  // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
       const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
-      try { await setDoc(getSettingsRef(), dataToSave, { merge: false }); showMsg("設定已儲存"); } catch(e) { showMsg("儲存失敗", "error"); }
+      try { 
+          await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
+          showMsg("設定已儲存"); 
+      } catch(e) { 
+          showMsg("儲存失敗", "error"); 
+      }
   };
 
   const saveHistoryRecord = async () => {
@@ -689,11 +694,53 @@ export default function App() {
   };
   const generateReport = (item) => { setReportData(item); };
 
-  // Inventory Handlers
-  const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
-  const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
-  const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
-  const deleteModel = (mfr, modelId) => { const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } }; setInventory(newInventory); saveConfig({ inventory: newInventory }); };
+  // Inventory Handlers - FIXED: Calculate new state and save immediately
+  const addMfr = () => { 
+      if (!newManufacturer) return; 
+      const name = newManufacturer.trim(); 
+      if (inventory[name]) return showMsg("已存在", "error"); 
+      
+      const newInventory = { ...inventory, [name]: { models: [] } };
+      setInventory(newInventory); 
+      setNewManufacturer(''); 
+      saveConfig({ inventory: newInventory });
+  };
+
+  const deleteMfr = (mfr) => { 
+      setModal({ 
+          title: "刪除品牌", 
+          message: `確定刪除 ${mfr}？`, 
+          type: "danger", 
+          onConfirm: () => { 
+              const newInventory = {...inventory}; 
+              delete newInventory[mfr]; 
+              setInventory(newInventory); 
+              setEditingMfr(null); 
+              setModal(null); 
+              saveConfig({ inventory: newInventory });
+          } 
+      }); 
+  };
+
+  const addModel = (mfr) => { 
+      if(!newModel.id) return; 
+      const newCar = { 
+        id: newModel.id.trim(), 
+        years: newModel.years.split(',').filter(Boolean), 
+        codes: newModel.codes.split(',').filter(Boolean) 
+      }; 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } };
+      
+      setInventory(newInventory); 
+      setNewModel({ id: '', years: '', codes: '' }); 
+      saveConfig({ inventory: newInventory });
+  };
+
+  const deleteModel = (mfr, modelId) => { 
+      const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: (inventory[mfr].models || []).filter(m => m.id !== modelId) } };
+      setInventory(newInventory); 
+      saveConfig({ inventory: newInventory });
+  };
   
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
@@ -715,19 +762,6 @@ export default function App() {
       saveConfig({ appConfig: { ...appConfig, logo: null } });
       showMsg("Logo 已移除");
   };
-
-  // --- Dynamic Favicon Effect ---
-  useEffect(() => {
-    if (appConfig.logo) {
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
-      link.href = appConfig.logo;
-    }
-  }, [appConfig.logo]);
 
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
