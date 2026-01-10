@@ -20,16 +20,16 @@ const MANUAL_FIREBASE_CONFIG = {
 const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
-// 更新 OT (Others) 取代 DE
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
 const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 2000, logo: null }; 
 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
-  OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' }, // 德國改為其他國家
+  OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
+// 2. 確保 DEFAULT_FEES 是最新的結構
 const DEFAULT_FEES = {
   JP: {
     origin: { 
@@ -53,8 +53,8 @@ const DEFAULT_FEES = {
   UK: {
     origin: { 
         shipping: { label: '船運費', val: '1500' },
-        inspection: { label: '當地驗車', val: '300' },
-        other: { label: '其他費用', val: '200' }
+        inspection: { label: '當地驗車', val: '300' }, // 1. 修正項目
+        other: { label: '其他費用', val: '200' }     // 1. 修正項目
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -70,7 +70,7 @@ const DEFAULT_FEES = {
         insurance: { label: '保險', val: '2500' }
     }
   },
-  OT: { // 其他國家 (跟英國結構一樣)
+  OT: { // 2. 其他國家 (跟英國結構一樣)
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
@@ -164,7 +164,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -181,13 +181,13 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
     <div className="mb-4 relative">
       <label className="block text-sm font-bold text-slate-800 mb-1.5">{label}</label>
       <div className="relative">
-        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-200 text-slate-600 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
+        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
         {!value && <ChevronDown className="w-5 h-5 absolute right-3 top-3 text-slate-500 pointer-events-none" />}
         {value && <X className="w-5 h-5 absolute right-3 top-3 text-slate-500 cursor-pointer hover:text-red-600 transition-colors" onClick={() => onChange('')} />}
       </div>
       {open && filtered.length > 0 && !disabled && (
         <ul className="absolute z-30 w-full mt-1 max-h-60 overflow-y-auto bg-white border-2 border-slate-200 rounded-lg shadow-xl ring-1 ring-black/10">
-          {filtered.map((opt, i) => <li key={i} className="px-4 py-2.5 text-sm text-black hover:bg-blue-100 cursor-pointer font-bold border-b border-slate-100 last:border-0" onMouseDown={() => onChange(opt)}>{opt}</li>)}
+          {filtered.map((opt, i) => <li key={i} className="px-4 py-2.5 text-sm text-slate-900 hover:bg-blue-100 cursor-pointer font-bold border-b border-slate-100 last:border-0" onMouseDown={() => onChange(opt)}>{opt}</li>)}
         </ul>
       )}
     </div>
@@ -242,7 +242,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
     const safeHkLicenseTotal = results.hkLicenseTotal !== undefined ? results.hkLicenseTotal : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
 
     return (
-        <div className="fixed inset-0 z-[100] bg-slate-800/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
+        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
                     @page { size: A4; margin: 0; }
@@ -262,8 +262,9 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
                         <div><h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-md text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
+                             {/* 3. LOGO 顯示優化 (放大，無白邊) */}
                              {logo ? (
-                                <img src={logo} alt="Company Logo" className="h-16 object-contain mb-2 ml-auto" />
+                                <img src={logo} alt="Company Logo" className="h-24 object-contain mb-2 ml-auto" />
                             ) : (
                                 <h2 className="text-2xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-8 h-8'/> HK Car Dealer</h2>
                             )}
@@ -428,15 +429,28 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings
+  // Sync Settings - **AUTO MIGRATION FIX**
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
+              let loadedFees = d.fees;
+              
+              // 1. 自動檢測舊的 UK/OT 結構並更新
+              // 如果 UK 還是舊的 'auctionFee' 結構，則強制更新為新結構
+              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
+                  console.log("Detected old fee structure. Migrating to new structure...");
+                  loadedFees = DEFAULT_FEES; // 使用新的默認費用覆蓋
+                  // 寫回數據庫
+                  setDoc(ref, { fees: DEFAULT_FEES }, { merge: true });
+                  showMsg("系統已自動更新費用結構至最新版本");
+              }
+
               if(d.rates) setRates(d.rates);
-              if(d.fees) setFees(d.fees);
+              // 使用可能已經遷移過的 loadedFees
+              setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -664,7 +678,8 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
-                      {appConfig.logo ? <img src={appConfig.logo} className="h-16 w-auto rounded bg-white p-1"/> : <Truck className="w-8 h-8 text-blue-400"/>}
+                      {/* 3. LOGO 顯示優化 (放大，無白邊) */}
+                      {appConfig.logo ? <img src={appConfig.logo} className="h-16 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
                       HK 汽車行家助手
                   </div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
