@@ -20,13 +20,14 @@ const MANUAL_FIREBASE_CONFIG = {
 const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
+// 更新 OT (Others) 取代 DE
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
 const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 2000, logo: null }; 
 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
-  OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
+  OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' }, // 德國改為其他國家
 };
 
 const DEFAULT_FEES = {
@@ -69,7 +70,7 @@ const DEFAULT_FEES = {
         insurance: { label: '保險', val: '2500' }
     }
   },
-  OT: {
+  OT: { // 其他國家 (跟英國結構一樣)
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
@@ -163,7 +164,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -180,13 +181,13 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
     <div className="mb-4 relative">
       <label className="block text-sm font-bold text-slate-800 mb-1.5">{label}</label>
       <div className="relative">
-        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
+        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-200 text-slate-600 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
         {!value && <ChevronDown className="w-5 h-5 absolute right-3 top-3 text-slate-500 pointer-events-none" />}
         {value && <X className="w-5 h-5 absolute right-3 top-3 text-slate-500 cursor-pointer hover:text-red-600 transition-colors" onClick={() => onChange('')} />}
       </div>
       {open && filtered.length > 0 && !disabled && (
-        <ul className="absolute z-30 w-full mt-1 max-h-60 overflow-y-auto bg-white border-2 border-slate-200 rounded-lg shadow-xl ring-1 ring-black/5">
-          {filtered.map((opt, i) => <li key={i} className="px-4 py-2.5 text-sm text-slate-900 hover:bg-blue-50 cursor-pointer font-bold" onMouseDown={() => onChange(opt)}>{opt}</li>)}
+        <ul className="absolute z-30 w-full mt-1 max-h-60 overflow-y-auto bg-white border-2 border-slate-200 rounded-lg shadow-xl ring-1 ring-black/10">
+          {filtered.map((opt, i) => <li key={i} className="px-4 py-2.5 text-sm text-black hover:bg-blue-100 cursor-pointer font-bold border-b border-slate-100 last:border-0" onMouseDown={() => onChange(opt)}>{opt}</li>)}
         </ul>
       )}
     </div>
@@ -197,13 +198,13 @@ const ConfirmationModal = ({ config, onClose }) => {
     if (!config) return null;
     const { title, message, onConfirm, type } = config;
     return (
-      <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <Card className="max-w-sm w-full animate-in fade-in zoom-in-95 shadow-2xl border-0 ring-1 ring-white/20">
-          <div className={`p-5 border-b ${type === 'danger' ? 'bg-red-50 border-red-100 text-red-800' : 'bg-blue-50 border-blue-100 text-blue-800'}`}><h3 className="font-bold flex gap-2 items-center text-lg"><AlertTriangle className="w-6 h-6" />{title}</h3></div>
-          <div className="p-6 text-base text-slate-700 font-medium leading-relaxed">{message}</div>
-          <div className="flex justify-end gap-3 p-5 border-t bg-gray-50">
-            <button onClick={onClose} className="px-5 py-2.5 bg-white border-2 border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 font-bold shadow-sm transition-all">取消</button>
-            <button onClick={onConfirm} className={`px-5 py-2.5 text-white rounded-xl shadow-lg font-bold transition-all transform active:scale-95 ${type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>確認</button>
+          <div className={`p-5 border-b-2 ${type === 'danger' ? 'bg-red-50 border-red-200 text-red-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}><h3 className="font-black flex gap-2 items-center text-xl"><AlertTriangle className="w-6 h-6" />{title}</h3></div>
+          <div className="p-6 text-base text-slate-900 font-bold leading-relaxed">{message}</div>
+          <div className="flex justify-end gap-3 p-5 border-t-2 border-slate-200 bg-gray-50">
+            <button onClick={onClose} className="px-5 py-2.5 bg-white border-2 border-slate-300 text-slate-800 rounded-xl hover:bg-slate-100 font-bold shadow-sm transition-all">取消</button>
+            <button onClick={onConfirm} className={`px-5 py-2.5 text-white rounded-xl shadow-lg font-bold transition-all transform active:scale-95 ${type === 'danger' ? 'bg-red-700 hover:bg-red-800' : 'bg-blue-700 hover:bg-blue-800'}`}>確認</button>
           </div>
         </Card>
       </div>
@@ -214,7 +215,7 @@ const ImagePreviewModal = ({ file, onClose }) => {
     if (!file) return null;
     return (
         <div className="fixed inset-0 bg-black/95 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10 transition"><X className="w-10 h-10" /></button>
+            <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full hover:bg-white/10 transition"><X className="w-10 h-10" /></button>
             <div className="relative w-full h-full flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
                 <img src={file.data} alt={file.name} className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl" />
                 <div className="mt-6 flex gap-4">
@@ -252,7 +253,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     #printable-report { padding: 15mm 20mm; box-shadow: none; border: none; }
                     .no-print { display: none !important; }
                     .page-break-inside-avoid { page-break-inside: avoid; }
-                    /* Ensure colors print correctly */
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 }
             `}</style>
@@ -260,55 +260,55 @@ const PrintableReport = ({ data, onClose, logo }) => {
             <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full transform transition-transform">
                 <div id="printable-report" className="p-12 text-slate-900 h-full flex flex-col font-sans">
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
-                        <div><h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-md text-slate-600 font-bold">日期: {date}</p></div>
+                        <div><h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-md text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
                              {logo ? (
                                 <img src={logo} alt="Company Logo" className="h-16 object-contain mb-2 ml-auto" />
                             ) : (
                                 <h2 className="text-2xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-8 h-8'/> HK Car Dealer</h2>
                             )}
-                            <p className="text-sm text-slate-500 font-bold uppercase tracking-widest">Internal Use Only</p>
+                            <p className="text-sm text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
                     </div>
 
                     <div className="mb-8">
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-600 pl-3">車輛資料</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 text-sm bg-slate-50 p-6 rounded-xl border-2 border-slate-200">
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">品牌</span> <span className="font-bold text-lg text-slate-900">{details.manufacturer}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">型號</span> <span className="font-bold text-lg text-slate-900">{details.model}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">年份</span> <span className="font-bold text-lg text-slate-900">{details.year}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">代號</span> <span className="font-bold text-lg text-slate-900">{details.code}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">排氣量</span> <span className="font-bold text-slate-900">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">座位數</span> <span className="font-bold text-slate-900">{details.seats || '-'}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">外觀顏色</span> <span className="font-bold text-slate-900">{details.exteriorColor || '-'}</span></div>
-                            <div><span className="text-slate-500 block text-xs font-bold uppercase mb-1">內飾顏色</span> <span className="font-bold text-slate-900">{details.interiorColor || '-'}</span></div>
-                            <div className="col-span-2 border-t-2 border-slate-200 pt-3 mt-1 flex items-center gap-2"><span className="text-slate-500 text-xs font-bold uppercase">車身號碼:</span> <span className="font-mono font-bold text-base text-slate-900">{details.chassisNo || '-'}</span></div>
+                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-700 pl-3">車輛資料</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 text-sm bg-slate-100 p-6 rounded-xl border-2 border-slate-300">
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">品牌</span> <span className="font-bold text-lg text-black">{details.manufacturer}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">型號</span> <span className="font-bold text-lg text-black">{details.model}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">年份</span> <span className="font-bold text-lg text-black">{details.year}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">代號</span> <span className="font-bold text-lg text-black">{details.code}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">座位數</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-xs font-bold uppercase mb-1">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
+                            <div className="col-span-2 border-t-2 border-slate-300 pt-3 mt-1 flex items-center gap-2"><span className="text-slate-600 text-xs font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-base text-black">{details.chassisNo || '-'}</span></div>
                         </div>
                     </div>
 
                     <div className="mb-8">
-                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-600 pl-3">核心成本</h3>
-                        <table className="w-full text-sm border-2 border-slate-200 rounded-lg overflow-hidden">
-                            <thead className="bg-slate-100 text-slate-700">
+                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider mb-4 border-l-8 border-blue-700 pl-3">核心成本</h3>
+                        <table className="w-full text-sm border-2 border-slate-300 rounded-lg overflow-hidden">
+                            <thead className="bg-slate-200 text-slate-900">
                                 <tr>
-                                    <th className="text-left py-3 px-4 font-bold border-b-2 border-slate-300">項目</th>
-                                    <th className="text-right py-3 px-4 font-bold border-b-2 border-slate-300">金額 ({COUNTRIES[country].currency})</th>
-                                    <th className="text-right py-3 px-4 font-bold border-b-2 border-slate-300">匯率</th>
-                                    <th className="text-right py-3 px-4 font-bold border-b-2 border-slate-300 bg-blue-50/50">港幣 (HKD)</th>
+                                    <th className="text-left py-3 px-4 font-black border-b-2 border-slate-400">項目</th>
+                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
+                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400">匯率</th>
+                                    <th className="text-right py-3 px-4 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th>
                                 </tr>
                             </thead>
-                            <tbody className='divide-y divide-slate-200'>
+                            <tbody className='divide-y divide-slate-300'>
                                 <tr>
-                                    <td className="py-3 px-4 font-bold text-slate-800">當地車價</td>
-                                    <td className="text-right px-4 font-mono font-medium">{vals.carPrice}</td>
-                                    <td className="text-right px-4 font-mono font-medium">{vals.rate}</td>
-                                    <td className="text-right px-4 font-bold text-slate-900 bg-blue-50/30">{fmt(results.carPriceHKD)}</td>
+                                    <td className="py-3 px-4 font-bold text-slate-900">當地車價</td>
+                                    <td className="text-right px-4 font-mono font-bold">{vals.carPrice}</td>
+                                    <td className="text-right px-4 font-mono font-bold">{vals.rate}</td>
+                                    <td className="text-right px-4 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
                                 </tr>
                                 <tr>
-                                    <td className="py-3 px-4 font-bold text-slate-800">當地雜費 <span className='text-xs font-normal text-slate-500 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
-                                    <td className="text-right px-4 text-slate-400">-</td>
-                                    <td className="text-right px-4 text-slate-400">-</td>
-                                    <td className="text-right px-4 font-bold text-slate-900 bg-blue-50/30">{fmt(results.originTotalHKD)}</td>
+                                    <td className="py-3 px-4 font-bold text-slate-900">當地雜費 <span className='text-xs font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
+                                    <td className="text-right px-4 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-4 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-4 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -316,73 +316,53 @@ const PrintableReport = ({ data, onClose, logo }) => {
 
                     <div className="grid grid-cols-2 gap-10 mb-8">
                         <div>
-                            <h4 className="font-bold text-slate-800 border-b-2 border-slate-300 pb-2 mb-3 text-sm uppercase tracking-wide">香港雜費</h4>
+                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-2 mb-3 text-sm uppercase tracking-wide">香港雜費</h4>
                             <ul className="text-sm space-y-2">
                                 {Object.entries(hkMiscFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono font-medium text-slate-800">${v.val}</span></li>
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between items-center font-black border-t-2 border-slate-800 pt-2 mt-3 text-base bg-slate-50 p-2 rounded"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
+                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-2 mt-3 text-base bg-slate-100 p-2 rounded border border-slate-200"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
                         <div>
-                            <h4 className="font-bold text-slate-800 border-b-2 border-slate-300 pb-2 mb-3 text-sm uppercase tracking-wide">出牌費用</h4>
+                            <h4 className="font-black text-slate-900 border-b-2 border-slate-400 pb-2 mb-3 text-sm uppercase tracking-wide">出牌費用</h4>
                             <ul className="text-sm space-y-2">
                                 {Object.entries(hkLicenseFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono font-medium text-slate-800">${v.val}</span></li>
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between items-center bg-orange-50 -mx-2 px-2 py-1 rounded border border-orange-100"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-700">{fmt(results.frt)}</span></li>
-                                <li className="text-xs text-slate-400 text-right -mt-1 mb-1">(PRP: ${vals.prp})</li>
-                                <li className="flex justify-between items-center font-black border-t-2 border-slate-800 pt-2 mt-2 text-base bg-slate-50 p-2 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
+                                <li className="flex justify-between items-center bg-orange-100 -mx-2 px-2 py-1 rounded border border-orange-300"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
+                                <li className="text-xs text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${vals.prp})</li>
+                                <li className="flex justify-between items-center font-black border-t-2 border-slate-900 pt-2 mt-2 text-base bg-slate-100 p-2 rounded border border-slate-200"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
                             </ul>
                         </div>
                     </div>
 
-                    {attachments && attachments.length > 0 && (
-                        <div className="mb-6 page-break-inside-avoid">
-                            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">附件文件</h3>
-                            <div className="grid grid-cols-4 gap-3">
-                                {attachments.map((file, idx) => (
-                                    <div key={idx} className="border-2 border-slate-200 rounded-lg p-2 flex flex-col items-center gap-2 bg-slate-50">
-                                        {file.type.startsWith('image/') ? (
-                                            <div className="w-full h-24 bg-white rounded overflow-hidden flex items-center justify-center border border-slate-200">
-                                                <img src={file.data} className="w-full h-full object-cover" />
-                                            </div>
-                                        ) : (
-                                            <div className="w-full h-24 flex items-center justify-center bg-white rounded border border-slate-200 text-slate-400"><FileText className="w-10 h-10" /></div>
-                                        )}
-                                        <span className="truncate w-full text-[10px] text-center font-bold text-slate-700" title={file.name}>{file.name}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
                     <div className="mt-auto">
-                         <div className="bg-slate-50 border-2 border-slate-200 rounded-xl p-8 space-y-6 break-inside-avoid shadow-sm">
-                            <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4">
+                         <div className="bg-white border-4 border-slate-800 rounded-xl p-8 space-y-6 break-inside-avoid shadow-lg">
+                            <div className="flex justify-between items-center border-b-2 border-slate-300 pb-4">
                                 <div>
-                                    <span className="text-slate-700 font-extrabold block text-xl">車輛到港成本</span>
-                                    <span className="text-xs text-slate-500 font-bold uppercase tracking-wide">Landed Cost (含A1稅，不含牌費保險)</span>
+                                    <span className="text-slate-800 font-black block text-xl">車輛到港成本</span>
+                                    <span className="text-xs text-slate-600 font-bold uppercase tracking-wide">Landed Cost (含A1稅，不含牌費保險)</span>
                                 </div>
-                                <span className="text-3xl font-black text-slate-800 tracking-tight">{fmt(results.landedCost)}</span>
+                                <span className="text-3xl font-black text-slate-900 tracking-tight">{fmt(results.landedCost)}</span>
                             </div>
                             <div className="flex justify-between items-center pt-2">
                                 <div>
-                                    <span className="text-blue-900 font-extrabold block text-2xl">預計總成本</span>
-                                    <span className="text-xs text-blue-600 font-bold uppercase tracking-wide">Total Cost (All Inclusive)</span>
+                                    <span className="text-blue-900 font-black block text-2xl">預計總成本</span>
+                                    <span className="text-xs text-blue-700 font-bold uppercase tracking-wide">Total Cost (All Inclusive)</span>
                                 </div>
-                                <span className="text-5xl font-black text-blue-700 tracking-tighter">{fmt(results.totalCost)}</span>
+                                <span className="text-5xl font-black text-blue-800 tracking-tighter">{fmt(results.totalCost)}</span>
                             </div>
                         </div>
-                        <div className="mt-8 pt-6 border-t-2 border-slate-200 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        <div className="mt-8 pt-6 border-t-2 border-slate-300 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">
                              <p>© {new Date().getFullYear()} HK Car Dealer Tool | Confidential Document</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="absolute top-4 right-4 flex gap-2 no-print">
-                     <button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-blue-700 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95"><Printer className="w-5 h-5" /> 列印 / PDF</button>
-                     <button onClick={onClose} className="bg-white text-slate-700 border-2 border-slate-300 px-6 py-3 rounded-full shadow-xl hover:bg-slate-50 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95"><X className="w-5 h-5" /> 關閉</button>
+                     <button onClick={handlePrint} className="bg-blue-700 text-white px-6 py-3 rounded-full shadow-xl hover:bg-blue-800 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95 border-2 border-blue-900"><Printer className="w-5 h-5" /> 列印 / PDF</button>
+                     <button onClick={onClose} className="bg-white text-slate-900 border-2 border-slate-400 px-6 py-3 rounded-full shadow-xl hover:bg-slate-100 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95"><X className="w-5 h-5" /> 關閉</button>
                 </div>
             </div>
         </div>
@@ -659,6 +639,19 @@ export default function App() {
       showMsg("Logo 已移除");
   };
 
+  // --- Dynamic Favicon Effect ---
+  useEffect(() => {
+    if (appConfig.logo) {
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = appConfig.logo;
+    }
+  }, [appConfig.logo]);
+
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
   return (
@@ -671,7 +664,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
-                      {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded bg-white p-1"/> : <Truck className="w-8 h-8 text-blue-400"/>}
+                      {appConfig.logo ? <img src={appConfig.logo} className="h-16 w-auto rounded bg-white p-1"/> : <Truck className="w-8 h-8 text-blue-400"/>}
                       HK 汽車行家助手
                   </div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
