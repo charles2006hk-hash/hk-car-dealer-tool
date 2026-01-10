@@ -228,7 +228,7 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- REPORT COMPONENT (FIXED FOR PRINTING) ---
+// --- REPORT COMPONENT (FIXED VISIBILITY FOR PRINT) ---
 const PrintableReport = ({ data, onClose, logo }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
@@ -241,7 +241,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
     const safeHkLicenseTotal = results.hkLicenseTotal !== undefined ? results.hkLicenseTotal : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
 
     return (
-        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto">
+        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
                     @page { 
@@ -249,53 +249,54 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         margin: 0;
                     }
                     
-                    /* Reset Body */
-                    html, body { 
-                        width: 210mm;
-                        height: 297mm;
+                    /* 1. 隱藏 Body 內容 */
+                    body { 
+                        visibility: hidden;
+                        background: white;
+                    }
+
+                    /* 2. 強制顯示報表容器及其子元素 */
+                    #printable-report-container { 
+                        visibility: visible !important; 
+                        position: fixed !important; 
+                        left: 0 !important; 
+                        top: 0 !important; 
+                        width: 210mm !important; 
+                        height: 297mm !important; 
                         margin: 0 !important; 
                         padding: 0 !important; 
-                        overflow: hidden !important; 
-                        background: white !important;
+                        background: white !important; 
+                        z-index: 999999;
                     }
 
-                    /* 1. Hide everything initially */
-                    body > * {
-                        display: none !important;
+                    #printable-report-container * {
+                        visibility: visible !important;
                     }
 
-                    /* 2. Show only the printable container */
-                    #printable-report-wrapper {
-                        display: block !important;
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: 100%;
-                        margin: 0;
-                        padding: 0;
-                        background: white;
-                        z-index: 99999;
+                    /* 3. 調整報表佈局 */
+                    #printable-report { 
+                        padding: 10mm 15mm !important; 
+                        box-shadow: none !important; 
+                        border: none !important; 
+                        height: 100% !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
                     }
-
-                    /* Hide buttons */
+                    
+                    /* 4. 隱藏不必要的按鈕 */
                     .no-print { display: none !important; }
                     
-                    /* Compact styles for print */
-                    .print-text-sm { font-size: 9pt !important; }
-                    .print-text-xs { font-size: 8pt !important; }
-                    .print-p-0 { padding: 0 !important; }
-                    .print-shadow-none { box-shadow: none !important; }
-                    
-                    /* Ensure background colors print */
-                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    /* 5. 強制列印背景色 */
+                    * { 
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important; 
+                    }
                 }
             `}</style>
-            
-            {/* Wrapper div that becomes the ONLY visible thing on print */}
-            <div id="printable-report-wrapper" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl">
-                
-                <div className="p-10 text-slate-900 h-full flex flex-col font-sans">
+
+            <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full transform transition-transform">
+                <div id="printable-report" className="p-10 text-slate-900 h-full flex flex-col font-sans">
                     {/* Header */}
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
                         <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
@@ -309,7 +310,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     </div>
 
-                    {/* Car Details */}
+                    {/* Car Details - Compact Grid */}
                     <div className="mb-4">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
                         <div className="grid grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300 print:bg-white print:border">
@@ -360,18 +361,19 @@ const PrintableReport = ({ data, onClose, logo }) => {
                             <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
                             <ul className="text-[10px] space-y-0.5">
                                 {Object.entries(hkMiscFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">${v.val}</span></li>
+                                    <li key={k} className="flex justify-between"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">${v.val}</span></li>
                                 ))}
-                                <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded print:bg-transparent"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
+                                <li className="flex justify-between font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded print:bg-transparent"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
                         <div className="border border-slate-300 rounded p-2">
                             <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4>
                             <ul className="text-[10px] space-y-0.5">
                                 {Object.entries(hkLicenseFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">${v.val}</span></li>
+                                    <li key={k} className="flex justify-between"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">${v.val}</span></li>
                                 ))}
                                 <li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded print:bg-transparent"><span className="text-orange-900 font-bold print:text-black">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800 print:text-black">{fmt(results.frt)}</span></li>
+                                <li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${vals.prp})</li>
                                 <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded print:bg-transparent"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
                             </ul>
                         </div>
@@ -540,7 +542,7 @@ export default function App() {
       }
   }, [country, fees]);
   
-  // Auto-calculate License Fee based on CC (2025 Rates)
+  // Auto-calculate License Fee based on CC
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
