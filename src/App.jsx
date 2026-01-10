@@ -430,6 +430,7 @@ export default function App() {
       setTimeout(() => setSaveMsg(null), 3000);
   };
 
+  // Firebase Init
   useEffect(() => {
       const init = async () => {
           try {
@@ -447,6 +448,7 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
@@ -464,6 +466,7 @@ export default function App() {
       return () => unsub();
   }, [db, dataKey, getSettingsRef]);
 
+  // Sync History
   useEffect(() => {
       const ref = getHistoryRef();
       if (!ref) return;
@@ -476,6 +479,7 @@ export default function App() {
       return () => unsub();
   }, [db, dataKey, getHistoryRef]);
 
+  // Sync Fees
   useEffect(() => {
       if (fees[country]) {
           setCurrOriginFees(fees[country].origin);
@@ -487,6 +491,7 @@ export default function App() {
       }
   }, [country, fees]);
   
+  // Auto-calculate License Fee based on CC (2025 Rates)
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -512,16 +517,34 @@ export default function App() {
     const currentCount = attachments.length;
     const maxFiles = appConfig.maxFiles || 5;
     const maxSizeKB = appConfig.maxFileSizeKB || 500;
-    if (currentCount + files.length > maxFiles) return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
+
+    if (currentCount + files.length > maxFiles) {
+        return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
+    }
+
     const newAttachments = [];
+    
     for (const file of files) {
-        if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error'); continue; }
+        if (file.size > maxSizeKB * 1024) {
+            showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error');
+            continue;
+        }
         try {
             const base64 = await fileToBase64(file);
-            newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 });
-        } catch (error) { console.error("File reading error", error); }
+            newAttachments.push({
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: base64
+            });
+        } catch (error) {
+            console.error("File reading error", error);
+        }
     }
-    if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
+
+    if (newAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...newAttachments]);
+    }
     e.target.value = null; 
   };
 
@@ -532,14 +555,18 @@ export default function App() {
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp); 
+  
   let originTotal = 0;
   Object.values(currOriginFees || {}).forEach(v => originTotal += (parseFloat(v.val) || 0));
   const originTotalHKD = originTotal * rate;
+
   let hkMiscTotal = 0;
   Object.values(currHkMiscFees || {}).forEach(v => hkMiscTotal += (parseFloat(v.val) || 0));
+  
   let hkLicenseTotal = 0; 
   Object.values(currHkLicenseFees || {}).forEach(v => hkLicenseTotal += (parseFloat(v.val) || 0));
   const totalLicenseCost = hkLicenseTotal + frt;
+
   const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal + frt;
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
@@ -553,18 +580,29 @@ export default function App() {
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接資料庫", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
+      
       const record = {
           ts: Date.now(),
           date: new Date().toLocaleString('zh-HK'),
           timestamp: serverTimestamp(),
           country, details,
           vals: { carPrice, prp, rate },
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
+          fees: { 
+            origin: currOriginFees, 
+            hk_misc: currHkMiscFees,
+            hk_license: currHkLicenseFees
+          },
+          results: { 
+            carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost 
+          },
           attachments: attachments, 
           isLocked: false
       };
-      try { await addDoc(getHistoryRef(), record); showMsg("已記錄"); setTimeout(() => setActiveTab('history'), 500); } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
+      try {
+        await addDoc(getHistoryRef(), record);
+        showMsg("已記錄");
+        setTimeout(() => setActiveTab('history'), 500);
+      } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
   const generateCurrentReport = () => {
@@ -594,6 +632,7 @@ export default function App() {
   };
   const generateReport = (item) => { setReportData(item); };
 
+  // Inventory Handlers
   const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
   const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
   const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
@@ -679,8 +718,10 @@ export default function App() {
                                   <div className="col-span-2 md:col-span-2"><AutocompleteInput label="型號" value={details.model} onChange={v => setDetails(d => ({...d, model:v}))} options={inventory[details.manufacturer]?.models.map(m=>m.id) || []} /></div>
                                   <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
                                   <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
+                                  
                                   <InputGroup label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} type="text" placeholder="e.g. White" />
                                   <InputGroup label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} type="text" placeholder="e.g. Black" />
+                                  
                                   <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
@@ -733,7 +774,7 @@ export default function App() {
                       <div className="lg:col-span-5 space-y-6">
                           <Card className="p-6 border-l-8 border-indigo-600"><SectionHeader icon={Globe} title="當地雜費" color="text-indigo-800" /><div className="grid grid-cols-2 gap-x-4 gap-y-3">{Object.entries(currOriginFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrOriginFees(p => ({...p, [k]: {...p[k], val}}))} prefix={COUNTRIES[country].symbol} />))}</div><div className="mt-4 pt-3 border-t-2 border-slate-100 flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">折合港幣</span><span className="font-black text-indigo-700 text-xl">{fmt(originTotalHKD)}</span></div></Card>
                           <Card className="p-6 border-l-8 border-green-600"><SectionHeader icon={Ship} title="香港雜費 (到港成本)" color="text-green-800" /><div className="grid grid-cols-2 gap-x-4 gap-y-3">{Object.entries(currHkMiscFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkMiscFees(p => ({...p, [k]: {...p[k], val}}))} prefix="$" />))}</div><div className="mt-4 pt-3 border-t-2 border-slate-100 flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">小計</span><span className="font-black text-green-700 text-xl">{fmt(hkMiscTotal)}</span></div></Card>
-                          <Card className="p-6 border-l-8 border-orange-500"><SectionHeader icon={FileText} title="香港出牌費用" color="text-orange-700" /><div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">{Object.entries(currHkLicenseFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkLicenseFees(p => ({...p, [k]: {...p[k], val}}))} prefix="$" />))}</div><div className="flex justify-between items-center bg-orange-50 p-4 rounded-xl border border-orange-100 mb-2"><span className="text-sm font-bold text-slate-700">首次登記稅 (A1)</span><span className="font-black text-orange-700 text-xl">{fmt(frt)}</span></div><div className="flex justify-between items-center px-2"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">小計 (含稅)</span><span className="font-black text-slate-800 text-xl">{fmt(totalLicenseCost)}</span></div></Card>
+                          <Card className="p-6 border-l-8 border-orange-500"><SectionHeader icon={FileText} title="香港出牌費用" color="text-orange-700" /><div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">{Object.entries(currHkLicenseFees || {}).map(([k, v]) => (<InputGroup key={k} label={v.label} value={v.val} onChange={val => setCurrHkLicenseFees(p => ({...p, [k]: {...p[k], val}}))} prefix="$" />))}</div><div className="flex justify-between items-center bg-orange-50 p-4 rounded-lg mb-2"><span className="text-sm font-bold text-slate-700">首次登記稅 (FRT)</span><span className="font-black text-orange-700 text-xl">{fmt(frt)}</span></div><div className="flex justify-between items-center px-2"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">小計 (含稅)</span><span className="font-black text-slate-800 text-xl">{fmt(totalLicenseCost)}</span></div></Card>
                       </div>
                   </div>
 
