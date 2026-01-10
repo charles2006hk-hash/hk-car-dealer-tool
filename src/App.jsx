@@ -29,6 +29,7 @@ const COUNTRIES = {
   OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
+// 這是新的費用結構
 const DEFAULT_FEES = {
   JP: {
     origin: { 
@@ -51,9 +52,9 @@ const DEFAULT_FEES = {
   },
   UK: {
     origin: { 
-        shipping: { label: '船運費', val: '1500' },
-        inspection: { label: '當地驗車', val: '300' },
-        other: { label: '其他費用', val: '200' }
+        shipping: { label: '船運費', val: '1500' },     // 新結構
+        inspection: { label: '當地驗車', val: '300' },   // 新結構
+        other: { label: '其他費用', val: '200' }         // 新結構
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -69,7 +70,7 @@ const DEFAULT_FEES = {
         insurance: { label: '保險', val: '2500' }
     }
   },
-  OT: {
+  OT: { // 其他國家 (跟英國結構一樣)
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
@@ -163,7 +164,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -250,25 +251,23 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     }
                     
                     html, body { 
-                        height: 100%;
+                        height: auto;
+                        min-height: 100%;
                         margin: 0 !important; 
                         padding: 0 !important; 
                         overflow: visible !important;
-                        background: white;
+                        background: white !important;
                     }
 
-                    /* 1. HIDE EVERYTHING ON PAGE */
-                    body * {
-                        visibility: hidden;
+                    /* 強制隱藏所有非報表元素 */
+                    body > *:not(#printable-report-container) {
+                        display: none !important;
                     }
 
-                    /* 2. SHOW ONLY REPORT CONTAINER AND CHILDREN */
-                    #printable-report-container, #printable-report-container * {
-                        visibility: visible !important;
-                    }
-
-                    /* 3. POSITION REPORT CONTAINER ABSOLUTELY AT TOP LEFT */
+                    /* 強制顯示報表容器 */
                     #printable-report-container { 
+                        visibility: visible !important; 
+                        display: block !important;
                         position: absolute !important; 
                         left: 0 !important; 
                         top: 0 !important; 
@@ -280,13 +279,12 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         z-index: 999999;
                     }
 
-                    /* 4. CONTENT ADJUSTMENTS FOR A4 */
                     #printable-report { 
-                        padding: 10mm 15mm !important; /* Slightly reduced padding */
-                        height: 100%;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: space-between;
+                        padding: 10mm 15mm !important; 
+                        box-shadow: none !important; 
+                        border: none !important;
+                        height: auto !important;
+                        min-height: 297mm;
                     }
                     
                     .no-print { display: none !important; }
@@ -305,8 +303,9 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-4 mb-4">
                         <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
+                             {/* Logo 放大顯示 */}
                              {logo ? (
-                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-2 ml-auto" />
+                                <img src={logo} alt="Company Logo" className="h-24 w-auto object-contain mb-2 ml-auto" />
                             ) : (
                                 <h2 className="text-2xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-8 h-8'/> HK Car Dealer</h2>
                             )}
@@ -397,6 +396,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                                         ) : (
                                             <div className="w-full h-20 flex items-center justify-center bg-white rounded border border-slate-200 text-slate-400"><FileText className="w-6 h-6" /></div>
                                         )}
+                                        <span className="truncate w-full text-[9px] text-center font-bold text-slate-700">{file.name}</span>
                                     </div>
                                 ))}
                             </div>
