@@ -29,7 +29,6 @@ const COUNTRIES = {
   OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
-// 2. 確保 DEFAULT_FEES 是最新的結構
 const DEFAULT_FEES = {
   JP: {
     origin: { 
@@ -53,8 +52,8 @@ const DEFAULT_FEES = {
   UK: {
     origin: { 
         shipping: { label: '船運費', val: '1500' },
-        inspection: { label: '當地驗車', val: '300' }, // 1. 修正項目
-        other: { label: '其他費用', val: '200' }     // 1. 修正項目
+        inspection: { label: '當地驗車', val: '300' },
+        other: { label: '其他費用', val: '200' }
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -70,7 +69,7 @@ const DEFAULT_FEES = {
         insurance: { label: '保險', val: '2500' }
     }
   },
-  OT: { // 2. 其他國家 (跟英國結構一樣)
+  OT: {
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
@@ -128,7 +127,7 @@ const fileToBase64 = (file) => {
 };
 
 // --- UI Components ---
-const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden ${className}`}>{children}</div>;
+const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-md border-2 border-slate-300 overflow-hidden ${className}`}>{children}</div>;
 const SectionHeader = ({ icon: Icon, title, color="text-slate-900" }) => <div className="flex items-center gap-2 mb-4 pb-2 border-b-2 border-slate-200"><Icon className={`w-6 h-6 ${color}`} /><h3 className="font-extrabold text-slate-800 text-lg tracking-tight">{title}</h3></div>;
 
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
@@ -164,7 +163,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
         <input 
           type={type === 'number' ? 'text' : type} 
           inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 sm:text-sm border-2 border-slate-300 font-bold shadow-sm transition-colors`} 
+          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
           placeholder={placeholder} 
           value={displayValue} 
           onChange={handleChange} 
@@ -181,7 +180,7 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
     <div className="mb-4 relative">
       <label className="block text-sm font-bold text-slate-800 mb-1.5">{label}</label>
       <div className="relative">
-        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
+        <input type="text" className={`block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors ${disabled ? 'bg-slate-200 text-slate-600 cursor-not-allowed' : 'bg-white'}`} placeholder={placeholder} value={value} onChange={e => {onChange(e.target.value); setOpen(true);}} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 200)} disabled={disabled} />
         {!value && <ChevronDown className="w-5 h-5 absolute right-3 top-3 text-slate-500 pointer-events-none" />}
         {value && <X className="w-5 h-5 absolute right-3 top-3 text-slate-500 cursor-pointer hover:text-red-600 transition-colors" onClick={() => onChange('')} />}
       </div>
@@ -262,7 +261,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
                         <div><h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-md text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
-                             {/* 3. LOGO 顯示優化 (放大，無白邊) */}
+                             {/* Logo 尺寸修正：放大並確保清晰 */}
                              {logo ? (
                                 <img src={logo} alt="Company Logo" className="h-24 object-contain mb-2 ml-auto" />
                             ) : (
@@ -429,7 +428,7 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings - **AUTO MIGRATION FIX**
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
@@ -439,17 +438,14 @@ export default function App() {
               let loadedFees = d.fees;
               
               // 1. 自動檢測舊的 UK/OT 結構並更新
-              // 如果 UK 還是舊的 'auctionFee' 結構，則強制更新為新結構
               if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
                   console.log("Detected old fee structure. Migrating to new structure...");
                   loadedFees = DEFAULT_FEES; // 使用新的默認費用覆蓋
-                  // 寫回數據庫
                   setDoc(ref, { fees: DEFAULT_FEES }, { merge: true });
                   showMsg("系統已自動更新費用結構至最新版本");
               }
 
               if(d.rates) setRates(d.rates);
-              // 使用可能已經遷移過的 loadedFees
               setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
@@ -679,7 +675,7 @@ export default function App() {
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
                       {/* 3. LOGO 顯示優化 (放大，無白邊) */}
-                      {appConfig.logo ? <img src={appConfig.logo} className="h-16 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
+                      {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
                       HK 汽車行家助手
                   </div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
@@ -786,16 +782,23 @@ export default function App() {
                       </div>
                   </div>
 
-                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl flex flex-col justify-between gap-6 z-10 border border-slate-700 ring-1 ring-white/10">
+                  {/* 4. 修改底部總計欄 (手機適配) */}
+                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl flex flex-col justify-between gap-4 z-10 border border-slate-700 ring-1 ring-white/10">
                       <div className="flex justify-between w-full border-b border-slate-700 pb-4">
                           <span className="text-base text-slate-400 font-bold">車輛到港成本 <span className="text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
                           <span className="text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
                       </div>
-                      <div className="flex justify-between w-full items-end">
-                          <div><div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">預計總成本 (Total)</div><div className="text-5xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div></div>
-                          <div className="flex gap-3">
-                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-5 h-5"/> 報告</button>
-                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-5 h-5"/> 記錄</button>
+                      
+                      {/* Flex Container for Mobile Layout */}
+                      <div className="flex flex-col sm:flex-row justify-between w-full items-stretch sm:items-end gap-3">
+                          <div className="text-center sm:text-left mb-2 sm:mb-0">
+                            <div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">預計總成本 (Total)</div>
+                            <div className="text-4xl sm:text-5xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div>
+                          </div>
+                          
+                          <div className="flex gap-2 w-full sm:w-auto">
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 px-4 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 text-sm"><Printer className="w-5 h-5"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="flex-1 sm:flex-none justify-center bg-green-600 hover:bg-green-500 px-4 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1 text-sm"><PlusCircle className="w-5 h-5"/> 記錄</button>
                           </div>
                       </div>
                   </div>
