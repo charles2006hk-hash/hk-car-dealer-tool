@@ -21,7 +21,7 @@ const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
-const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 5000, logo: null }; 
+const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 2000, logo: null }; 
 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
@@ -117,54 +117,14 @@ const getLicenseFeeByCC = (cc) => {
     return 14694; 
 };
 
-// --- IMAGE COMPRESSION & BASE64 HELPER ---
-const compressImage = (file) => {
+const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        // Create a canvas for resizing
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Resize to max 800px width
-        const scaleSize = MAX_WIDTH / img.width;
-        
-        let width = img.width;
-        let height = img.height;
-
-        // Only resize if image is wider than MAX_WIDTH
-        if (width > MAX_WIDTH) {
-            width = MAX_WIDTH;
-            height = img.height * scaleSize;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convert to Base64 (JPEG with 0.6 quality for good compression)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-        resolve(dataUrl);
-      };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (err) => reject(err);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
   });
 };
-
-const readFileAsBase64 = (file) => {
-    // For non-image files, just read directly
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = error => reject(error);
-    });
-};
-
 
 // --- UI Components ---
 const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-md border-2 border-slate-300 overflow-hidden ${className}`}>{children}</div>;
@@ -271,16 +231,6 @@ const ImagePreviewModal = ({ file, onClose }) => {
 // --- REPORT COMPONENT ---
 const PrintableReport = ({ data, onClose, logo }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
-    
-    // Helper to format local currency
-    const fmtLocal = (n) => {
-        const symbol = COUNTRIES[country].symbol;
-        const code = COUNTRIES[country].currency;
-        // Format with commas, no decimals
-        const val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
-        return `${symbol}${val}`;
-    };
-
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
     const handlePrint = () => window.print();
@@ -295,10 +245,10 @@ const PrintableReport = ({ data, onClose, logo }) => {
             <style>{`
                 @media print {
                     @page { size: A4; margin: 0; }
-                    html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: white; }
-                    body > *:not(#printable-report-container) { display: none !important; }
-                    #printable-report-container { visibility: visible !important; position: absolute; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0 !important; padding: 0 !important; background: white; z-index: 999999; }
-                    #printable-report-container * { visibility: visible !important; }
+                    html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: visible; }
+                    body { visibility: hidden; background: white; }
+                    #printable-report-container { visibility: visible; position: absolute; left: 0; top: 0; width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: white; z-index: 999999; }
+                    #printable-report-container * { visibility: visible; }
                     #printable-report { padding: 10mm 15mm !important; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: none !important; border: none !important; }
                     .no-print { display: none !important; }
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -306,8 +256,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
             `}</style>
 
             <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full transform transition-transform">
-                <div id="printable-report" className="p-12 text-slate-900 h-full flex flex-col font-sans">
-                    {/* Header */}
+                <div id="printable-report" className="p-10 text-slate-900 h-full flex flex-col font-sans">
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
                         <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
@@ -320,7 +269,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     </div>
 
-                    {/* Car Details */}
                     <div className="mb-4">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300 print:bg-white print:border">
@@ -332,11 +280,10 @@ const PrintableReport = ({ data, onClose, logo }) => {
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
-                            <div className="col-span-2 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
+                            <div className="col-span-2 md:col-span-4 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
                         </div>
                     </div>
 
-                    {/* Core Costs */}
                     <div className="mb-4">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
                         <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden print:border">
@@ -351,7 +298,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                             <tbody className='divide-y divide-slate-300'>
                                 <tr>
                                     <td className="py-1 px-2 font-bold text-slate-900">當地車價</td>
-                                    <td className="text-right px-2 font-mono font-bold">{fmtLocal(vals.carPrice)}</td>
+                                    <td className="text-right px-2 font-mono font-bold">{vals.carPrice}</td>
                                     <td className="text-right px-2 font-mono font-bold">{vals.rate}</td>
                                     <td className="text-right px-2 font-black text-black bg-blue-50/50 print:bg-transparent">{fmt(results.carPriceHKD)}</td>
                                 </tr>
@@ -365,7 +312,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </table>
                     </div>
 
-                    {/* Breakdown Grid */}
                     <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0">
                         <div className="border border-slate-300 rounded p-2">
                             <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
@@ -389,7 +335,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     </div>
 
-                    {/* Attachments - Compact Grid */}
                     {attachments && attachments.length > 0 && (
                         <div className="mb-4 flex-grow-0">
                             <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
@@ -397,7 +342,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                                 {attachments.slice(0, 5).map((file, idx) => (
                                     <div key={idx} className="border border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden print:bg-white print:border-slate-300">
                                         {file.type.startsWith('image/') ? (
-                                            <img src={file.data} className="w-full h-full object-cover rounded-sm" />
+                                            <img src={file.data} className="w-full h-full object-contain rounded-sm" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>
                                         )}
@@ -407,7 +352,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     )}
 
-                    {/* Footer Totals (Compact Horizontal Bar) */}
                     <div className="mt-auto border-t-4 border-slate-800 pt-3">
                         <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300 print:bg-white print:border-2">
                              <div className="flex flex-col">
@@ -494,30 +438,15 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings - **AUTO MIGRATION FIX**
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
-              let loadedFees = d.fees;
-              
-              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
-              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
-                  console.log("Detected old fee structure. Migrating to new structure...");
-                  // 使用新結構覆蓋舊結構
-                  loadedFees = {
-                      ...loadedFees,
-                      UK: DEFAULT_FEES.UK,
-                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
-                  };
-                  setDoc(ref, { fees: loadedFees }, { merge: true });
-                  showMsg("系統已自動更新費用結構至最新版本");
-              }
-
               if(d.rates) setRates(d.rates);
-              setFees(loadedFees || DEFAULT_FEES);
+              if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -595,7 +524,7 @@ export default function App() {
             newAttachments.push({
                 name: file.name,
                 type: file.type,
-                size: file.size,
+                size: file.size, // Note: This is original size, compressed size is unknown but smaller
                 data: base64
             });
         } catch (error) {
@@ -632,6 +561,7 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
+  // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
       const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
@@ -664,13 +594,6 @@ export default function App() {
           attachments: attachments, 
           isLocked: false
       };
-      
-      // Calculate total size
-      const size = JSON.stringify(record).length;
-      if (size > 900000) { // Limit < 1MB just to be safe
-          return showMsg("記錄過大（圖片過多），請減少圖片後重試。", "error");
-      }
-
       try {
         await addDoc(getHistoryRef(), record);
         showMsg("已記錄");
@@ -678,7 +601,6 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
-  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -767,7 +689,7 @@ export default function App() {
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
                       {/* 3. LOGO 顯示優化 (放大，無白邊) */}
                       {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
-                      HK 汽車行家助手
+                      HK入車系統
                   </div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
                       <Key className="w-3 h-3 text-yellow-400 ml-1" />
@@ -873,16 +795,21 @@ export default function App() {
                       </div>
                   </div>
 
-                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl flex flex-col justify-between gap-6 z-10 border border-slate-700 ring-1 ring-white/10">
-                      <div className="flex justify-between w-full border-b border-slate-700 pb-4">
-                          <span className="text-base text-slate-400 font-bold">車輛到港成本 <span className="text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
-                          <span className="text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
+                  <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-md text-white p-3 sm:p-4 rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col gap-3 z-10 border-t border-slate-700">
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                          <span className="text-xs sm:text-base text-slate-400 font-bold">車輛到港成本 <span className="text-[10px] sm:text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
+                          <span className="text-lg sm:text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
                       </div>
-                      <div className="flex justify-between w-full items-end">
-                          <div><div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">預計總成本 (Total)</div><div className="text-5xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div></div>
-                          <div className="flex gap-3">
-                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-5 h-5"/> 報告</button>
-                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-5 h-5"/> 記錄</button>
+                      
+                      <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            <div className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-widest mb-0.5">預計總成本 (Total)</div>
+                            <div className="text-2xl sm:text-4xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div>
+                          </div>
+                          
+                          <div className="flex gap-2 shrink-0">
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-3 sm:px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-4 h-4"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
                           </div>
                       </div>
                   </div>
