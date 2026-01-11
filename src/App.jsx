@@ -117,6 +117,37 @@ const getLicenseFeeByCC = (cc) => {
     return 14694; 
 };
 
+// --- IMAGE COMPRESSION HELPER ---
+const compressImage = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; 
+        const scaleSize = MAX_WIDTH / img.width;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_WIDTH) {
+            width = MAX_WIDTH;
+            height = img.height * scaleSize;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -133,9 +164,7 @@ const SectionHeader = ({ icon: Icon, title, color="text-slate-900" }) => <div cl
 const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required = false, type = 'number', step = 'any', min }) => {
   const displayValue = useMemo(() => {
     if (value === '' || value === null || value === undefined) return '';
-    if (type === 'number') {
-        return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    }
+    if (type === 'number') return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     return value;
   }, [value, type]);
 
@@ -143,13 +172,8 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
     let rawValue = e.target.value;
     if (type === 'number') {
         rawValue = rawValue.replace(/,/g, '');
-        if (rawValue === '' || rawValue === '-') {
-            onChange(rawValue);
-            return;
-        }
-        if (!isNaN(rawValue)) {
-            onChange(rawValue);
-        }
+        if (rawValue === '' || rawValue === '-') { onChange(rawValue); return; }
+        if (!isNaN(rawValue)) { onChange(rawValue); }
     } else {
         onChange(rawValue);
     }
@@ -160,14 +184,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
       {label && <label className="block text-sm font-bold text-slate-800 mb-1.5">{label}{required && <span className="text-red-600 ml-1">*</span>}</label>}
       <div className="relative rounded-md shadow-sm">
         {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-600 font-bold sm:text-sm">{prefix}</span></div>}
-        <input 
-          type={type === 'number' ? 'text' : type} 
-          inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
-          placeholder={placeholder} 
-          value={displayValue} 
-          onChange={handleChange} 
-        />
+        <input type={type === 'number' ? 'text' : type} inputMode={type === 'number' ? 'decimal' : 'text'} className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} placeholder={placeholder} value={displayValue} onChange={handleChange} />
       </div>
     </div>
   );
@@ -228,11 +245,10 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- REPORT COMPONENT ---
+// --- REPORT COMPONENT (FIXED VISIBILITY) ---
 const PrintableReport = ({ data, onClose, logo }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
-
     const handlePrint = () => window.print();
 
     const hkMiscFees = fees.hk_misc || {};
@@ -244,34 +260,59 @@ const PrintableReport = ({ data, onClose, logo }) => {
         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto print:p-0 print:bg-white print:static print:block">
             <style>{`
                 @media print {
-                    @page { size: A4; margin: 0; }
-                    html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: visible; }
-                    body { visibility: hidden; background: white; }
-                    #printable-report-container { visibility: visible; position: absolute; left: 0; top: 0; width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: white; z-index: 999999; }
-                    #printable-report-container * { visibility: visible; }
-                    #printable-report { padding: 10mm 15mm !important; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-shadow: none !important; border: none !important; }
+                    @page { size: A4 portrait; margin: 0; }
+                    html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: white !important; }
+                    
+                    /* CRITICAL: HIDE EVERYTHING */
+                    body * { visibility: hidden; }
+
+                    /* CRITICAL: SHOW ONLY REPORT CONTAINER & CHILDREN */
+                    #printable-report-container, #printable-report-container * {
+                        visibility: visible !important;
+                    }
+
+                    #printable-report-container { 
+                        position: fixed !important; 
+                        left: 0 !important; 
+                        top: 0 !important; 
+                        width: 210mm !important; 
+                        height: 297mm !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        background: white !important; 
+                        z-index: 999999;
+                    }
+                    #printable-report { 
+                        padding: 10mm 15mm !important; 
+                        height: 100%; 
+                        display: flex; 
+                        flex-direction: column; 
+                        justify-content: space-between; 
+                        box-shadow: none !important; 
+                        border: none !important; 
+                    }
                     .no-print { display: none !important; }
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 }
             `}</style>
 
             <div id="printable-report-container" className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl print:shadow-none print:my-0 print:w-full transform transition-transform">
-                <div id="printable-report" className="p-10 text-slate-900 h-full flex flex-col font-sans">
-                    <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
-                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
+                <div id="printable-report" className="p-12 text-slate-900 h-full flex flex-col font-sans">
+                    <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-6">
+                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
                              {logo ? (
-                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-1 ml-auto" />
+                                <img src={logo} alt="Company Logo" className="h-24 w-auto object-contain mb-2 ml-auto" />
                             ) : (
-                                <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-6 h-6'/> HK Car Dealer</h2>
+                                <h2 className="text-2xl font-black text-blue-900 flex items-center justify-end gap-2"><Truck className='w-8 h-8'/> HK Car Dealer</h2>
                             )}
-                            <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
+                            <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
                     </div>
 
-                    <div className="mb-4">
+                    <div className="mb-6">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300 print:bg-white print:border">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300 print:bg-white print:border">
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">品牌</span> <span className="font-bold text-sm text-black">{details.manufacturer}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">型號</span> <span className="font-bold text-sm text-black">{details.model}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">年份</span> <span className="font-bold text-sm text-black">{details.year}</span></div>
@@ -284,49 +325,49 @@ const PrintableReport = ({ data, onClose, logo }) => {
                         </div>
                     </div>
 
-                    <div className="mb-4">
+                    <div className="mb-6">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
                         <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden print:border">
                             <thead className="bg-slate-200 text-slate-900 print:bg-gray-200">
                                 <tr>
-                                    <th className="text-left py-1 px-2 font-black border-b-2 border-slate-400">項目</th>
-                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
-                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">匯率</th>
-                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400 bg-blue-100 print:bg-gray-100">港幣 (HKD)</th>
+                                    <th className="text-left py-2 px-3 font-black border-b-2 border-slate-400">項目</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400">匯率</th>
+                                    <th className="text-right py-2 px-3 font-black border-b-2 border-slate-400 bg-blue-100 print:bg-gray-100">港幣 (HKD)</th>
                                 </tr>
                             </thead>
                             <tbody className='divide-y divide-slate-300'>
                                 <tr>
-                                    <td className="py-1 px-2 font-bold text-slate-900">當地車價</td>
-                                    <td className="text-right px-2 font-mono font-bold">{vals.carPrice}</td>
-                                    <td className="text-right px-2 font-mono font-bold">{vals.rate}</td>
-                                    <td className="text-right px-2 font-black text-black bg-blue-50/50 print:bg-transparent">{fmt(results.carPriceHKD)}</td>
+                                    <td className="py-2 px-3 font-bold text-slate-900">當地車價</td>
+                                    <td className="text-right px-3 font-mono font-bold">{vals.carPrice}</td>
+                                    <td className="text-right px-3 font-mono font-bold">{vals.rate}</td>
+                                    <td className="text-right px-3 font-black text-black bg-blue-50/50 print:bg-transparent">{fmt(results.carPriceHKD)}</td>
                                 </tr>
                                 <tr>
-                                    <td className="py-1 px-2 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
-                                    <td className="text-right px-2 text-slate-500 font-bold">-</td>
-                                    <td className="text-right px-2 text-slate-500 font-bold">-</td>
-                                    <td className="text-right px-2 font-black text-black bg-blue-50/50 print:bg-transparent">{fmt(results.originTotalHKD)}</td>
+                                    <td className="py-2 px-3 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
+                                    <td className="text-right px-3 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-3 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-3 font-black text-black bg-blue-50/50 print:bg-transparent">{fmt(results.originTotalHKD)}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0">
-                        <div className="border border-slate-300 rounded p-2">
+                    <div className="grid grid-cols-2 gap-8 mb-6 flex-grow-0">
+                        <div className="border-2 border-slate-300 rounded p-2">
                             <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
                             <ul className="text-[10px] space-y-0.5">
                                 {Object.entries(hkMiscFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
                                 <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded print:bg-transparent"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
                             </ul>
                         </div>
-                        <div className="border border-slate-300 rounded p-2">
+                        <div className="border-2 border-slate-300 rounded p-2">
                             <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4>
                             <ul className="text-[10px] space-y-0.5">
                                 {Object.entries(hkLicenseFees).map(([k, v]) => (
-                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-700 font-bold">{v.label}</span><span className="font-mono font-bold text-black">${v.val}</span></li>
                                 ))}
                                 <li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded print:bg-transparent"><span className="text-orange-900 font-bold print:text-black">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800 print:text-black">{fmt(results.frt)}</span></li>
                                 <li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${new Intl.NumberFormat('en-US').format(vals.prp)})</li>
@@ -340,7 +381,7 @@ const PrintableReport = ({ data, onClose, logo }) => {
                             <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
                             <div className="grid grid-cols-5 gap-2">
                                 {attachments.slice(0, 5).map((file, idx) => (
-                                    <div key={idx} className="border border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden print:bg-white print:border-slate-300">
+                                    <div key={idx} className="border-2 border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden print:bg-white print:border-slate-300">
                                         {file.type.startsWith('image/') ? (
                                             <img src={file.data} className="w-full h-full object-contain rounded-sm" />
                                         ) : (
@@ -438,15 +479,30 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings
+  // Sync Settings - **AUTO MIGRATION FIX**
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
+              let loadedFees = d.fees;
+              
+              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
+              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
+                  console.log("Detected old fee structure. Migrating to new structure...");
+                  // 使用新結構覆蓋舊結構
+                  loadedFees = {
+                      ...loadedFees,
+                      UK: DEFAULT_FEES.UK,
+                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
+                  };
+                  setDoc(ref, { fees: loadedFees }, { merge: true });
+                  showMsg("系統已自動更新費用結構至最新版本");
+              }
+
               if(d.rates) setRates(d.rates);
-              if(d.fees) setFees(d.fees);
+              setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -594,6 +650,13 @@ export default function App() {
           attachments: attachments, 
           isLocked: false
       };
+      
+      // Check approximate size (Base64 string length)
+      const size = JSON.stringify(record).length;
+      if (size > 900000) { // Limit < 1MB
+          return showMsg("記錄過大（圖片過多），請減少圖片後重試。", "error");
+      }
+
       try {
         await addDoc(getHistoryRef(), record);
         showMsg("已記錄");
@@ -601,6 +664,7 @@ export default function App() {
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
+  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -689,7 +753,7 @@ export default function App() {
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
                       {/* 3. LOGO 顯示優化 (放大，無白邊) */}
                       {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
-                      HK入車系統
+                      HK 汽車行家助手
                   </div>
                   <div className="flex items-center gap-2 text-xs bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
                       <Key className="w-3 h-3 text-yellow-400 ml-1" />
@@ -795,21 +859,16 @@ export default function App() {
                       </div>
                   </div>
 
-                  <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-md text-white p-3 sm:p-4 rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col gap-3 z-10 border-t border-slate-700">
-                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-                          <span className="text-xs sm:text-base text-slate-400 font-bold">車輛到港成本 <span className="text-[10px] sm:text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
-                          <span className="text-lg sm:text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
+                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl flex flex-col justify-between gap-6 z-10 border border-slate-700 ring-1 ring-white/10">
+                      <div className="flex justify-between w-full border-b border-slate-700 pb-4">
+                          <span className="text-base text-slate-400 font-bold">車輛到港成本 <span className="text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
+                          <span className="text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
                       </div>
-                      
-                      <div className="flex items-center justify-between gap-2">
-                          <div className="flex flex-col">
-                            <div className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-widest mb-0.5">預計總成本 (Total)</div>
-                            <div className="text-2xl sm:text-4xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div>
-                          </div>
-                          
-                          <div className="flex gap-2 shrink-0">
-                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-3 sm:px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-4 h-4"/> 報告</button>
-                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
+                      <div className="flex justify-between w-full items-end">
+                          <div><div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">預計總成本 (Total)</div><div className="text-5xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div></div>
+                          <div className="flex gap-3">
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-5 h-5"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-5 h-5"/> 記錄</button>
                           </div>
                       </div>
                   </div>
