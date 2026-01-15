@@ -649,20 +649,40 @@ export default function App() {
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
   // --- NEW: Save Config Helper to handle specific updates ---
-  // [MODIFIED] Added robustness check for event objects
+  // [CRITICAL FIX] 增加 JSON.parse(JSON.stringify()) 來強制清除 undefined 值
   const saveConfig = async (overrides = {}) => {
-      if (!db) return;
-      
-      // FIX: 如果 overrides 是事件對象 (React SyntheticEvent)，則強制為空對象
-      const validOverrides = (overrides && overrides.preventDefault) ? {} : overrides;
+      if (!db) {
+          showMsg("資料庫未連接", "error");
+          return;
+      }
 
-      const dataToSave = { rates, fees, inventory, appConfig, ...validOverrides };
-      try { 
-          await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
-          showMsg("設定已儲存"); 
-      } catch(e) { 
-          console.error("Save failed:", e);
-          showMsg("儲存失敗: " + e.message, "error"); 
+      // 1. 檢查並過濾 Event 物件 (防止 onClick 直接調用傳入事件)
+      let safeOverrides = {};
+      // 如果傳入的是 React 合成事件 (SyntheticEvent) 或 DOM 事件，則忽略它
+      if (overrides && typeof overrides === 'object' && !overrides.nativeEvent && !overrides.preventDefault) {
+          safeOverrides = overrides;
+      }
+
+      // 2. 構建要保存的原始數據
+      const rawData = {
+          rates,
+          fees,
+          inventory,
+          appConfig,
+          ...safeOverrides
+      };
+
+      try {
+          // 3. [核彈級修復] 使用 JSON 序列化來移除所有 undefined 屬性
+          // Firestore 只要遇到任何一個欄位是 undefined 就會崩潰
+          // JSON.stringify 會自動丟棄值為 undefined 的鍵
+          const cleanData = JSON.parse(JSON.stringify(rawData));
+
+          await setDoc(getSettingsRef(), cleanData, { merge: false });
+          showMsg("設定已儲存");
+      } catch(e) {
+          console.error("SAVE FAILED DETAILED ERROR:", e); // 在 Console 顯示詳細錯誤
+          showMsg("儲存失敗: " + e.message, "error");
       }
   };
 
@@ -695,7 +715,9 @@ export default function App() {
       }
 
       try {
-        await addDoc(getHistoryRef(), record);
+        // 同樣對歷史記錄進行清理，以防萬一
+        const cleanRecord = JSON.parse(JSON.stringify(record));
+        await addDoc(getHistoryRef(), cleanRecord);
         showMsg("已記錄");
         setTimeout(() => setActiveTab('history'), 500);
       } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
@@ -1037,8 +1059,25 @@ export default function App() {
                        ))}
                    </Card>
                    <div className="flex justify-end gap-4">
-                        <button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button>
-                        {/* FIX: Use Arrow function to prevent passing Event object to saveConfig */}
+                        <button onClick={() => {
+                            setModal({
+                                title: "重置設定", 
+                                message: "確定重置？", 
+                                type: "danger", 
+                                onConfirm: () => {
+                                    // 更新本地狀態
+                                    setRates(DEFAULT_RATES); 
+                                    setFees(DEFAULT_FEES); 
+                                    setInventory(DEFAULT_INVENTORY); 
+                                    setAppConfig(DEFAULT_CONFIG); 
+                                    setModal(null); 
+                                    // 顯式傳入預設值進行保存，避免 React 閉包問題
+                                    saveConfig({ rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY, appConfig: DEFAULT_CONFIG });
+                                }
+                            });
+                        }} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button>
+                        
+                        {/* 使用箭頭函數，防止事件對象傳入 */}
                         <button onClick={() => saveConfig()} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button>
                    </div>
               </div>
