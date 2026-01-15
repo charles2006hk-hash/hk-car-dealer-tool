@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye } from 'lucide-react';
 
 // --- Firebase Imports ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 // 引入 initializeFirestore 和 memoryLocalCache 以進行進階設定
 import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -19,6 +19,35 @@ const MANUAL_FIREBASE_CONFIG = {
 };
 
 const APP_ID_PATH = 'hk-car-dealer-app';
+
+// --- Global Firebase Instance (防止重複初始化) ---
+let globalDb = null;
+let globalAuth = null;
+
+try {
+    // 檢查是否已經初始化
+    const app = getApps().length > 0 ? getApp() : initializeApp(MANUAL_FIREBASE_CONFIG);
+    
+    // 初始化 Firestore (強制使用長輪詢 Long Polling 以解決 QUIC 錯誤)
+    // 注意：initializeFirestore 只能調用一次，如果已經初始化過 getFirestore 會返回現有實例
+    try {
+        globalDb = initializeFirestore(app, {
+            experimentalForceLongPolling: true, // 關鍵修正：強制長輪詢
+            localCache: memoryLocalCache(),     // 關鍵修正：記憶體快取避免存儲權限錯誤
+        });
+    } catch (e) {
+        // 如果已經初始化過，直接獲取實例
+        globalDb = getFirestore(app);
+    }
+    
+    globalAuth = getAuth(app);
+    // 設定認證持久性
+    setPersistence(globalAuth, inMemoryPersistence).catch(console.error);
+
+} catch (e) {
+    console.error("Global Firebase Init Error:", e);
+}
+
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
@@ -119,7 +148,7 @@ const getLicenseFeeByCC = (cc) => {
 };
 
 // --- IMAGE COMPRESSION HELPER ---
-const compressImage = (file) => {
+const compressImage = (file, maxWidth = 800, quality = 0.6) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -128,19 +157,22 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; 
-        const scaleSize = MAX_WIDTH / img.width;
+        const scaleSize = maxWidth / img.width;
         let width = img.width;
         let height = img.height;
-        if (width > MAX_WIDTH) {
-            width = MAX_WIDTH;
+        
+        if (width > maxWidth) {
+            width = maxWidth;
             height = img.height * scaleSize;
         }
+
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        
+        // Use lower quality for stronger compression
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(dataUrl);
       };
       img.onerror = (err) => reject(err);
@@ -253,7 +285,7 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- REPORT COMPONENT (IFRAME PRINT STRATEGY) ---
+// --- REPORT COMPONENT ---
 const PrintableReport = ({ data, onClose, logo }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
@@ -287,7 +319,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
                     body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     @page { size: A4 portrait; margin: 0; }
-                    /* Container fixed to A4 dimensions */
                     .a4-container { width: 210mm; min-height: 297mm; padding: 10mm 15mm; margin: 0 auto; background: white; display: flex; flex-direction: column; justify-content: space-between; }
                     .no-print { display: none !important; }
                 </style>
@@ -298,7 +329,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
                 </div>
             </body>
             <script>
-                // Wait for styles and images
                 window.onload = () => {
                     setTimeout(() => {
                         window.print();
@@ -308,8 +338,6 @@ const PrintableReport = ({ data, onClose, logo }) => {
             </html>
         `);
         doc.close();
-        
-        // Clean up iframe after a delay
         setTimeout(() => document.body.removeChild(iframe), 3000);
     };
 
@@ -497,17 +525,33 @@ export default function App() {
   useEffect(() => {
       const init = async () => {
           try {
-              const app = initializeApp(MANUAL_FIREBASE_CONFIG);
-              const auth = getAuth(app);
-              // CRITICAL: Force Long Polling to avoid connection errors in restricted envs
-              const firestore = initializeFirestore(app, {
-                 experimentalForceLongPolling: true,
-                 localCache: memoryLocalCache()
-              });
+              // Ensure we don't re-initialize
+              const app = getApps().length > 0 ? getApp() : initializeApp(MANUAL_FIREBASE_CONFIG);
               
+              // Force long polling only if not already initialized
+              let firestore;
+              try {
+                  firestore = initializeFirestore(app, {
+                      experimentalForceLongPolling: true,
+                      localCache: memoryLocalCache(),
+                  });
+              } catch (e) {
+                  firestore = getFirestore(app);
+              }
+
+              const auth = getAuth(app);
               await setPersistence(auth, inMemoryPersistence);
-              await signInAnonymously(auth);
-              onAuthStateChanged(auth, (user) => { if (user) { setUserId(user.uid); setDb(firestore); } setIsReady(true); });
+              
+              // Handle auth
+              onAuthStateChanged(auth, (user) => { 
+                  if (user) { 
+                      setUserId(user.uid); 
+                      setDb(firestore); 
+                  } else {
+                      signInAnonymously(auth).catch(console.error);
+                  }
+                  setIsReady(true); 
+              });
           } catch (e) { console.error(e); setIsReady(true); }
       };
       init();
@@ -516,30 +560,15 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings - **AUTO MIGRATION FIX**
+  // Sync Settings
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
-              let loadedFees = d.fees;
-              
-              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
-              if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
-                  console.log("Detected old fee structure. Migrating to new structure...");
-                  // 使用新結構覆蓋舊結構
-                  loadedFees = {
-                      ...loadedFees,
-                      UK: DEFAULT_FEES.UK,
-                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
-                  };
-                  setDoc(ref, { fees: loadedFees }, { merge: true });
-                  showMsg("系統已自動更新費用結構至最新版本");
-              }
-
               if(d.rates) setRates(d.rates);
-              setFees(loadedFees || DEFAULT_FEES);
+              if(d.fees) setFees(d.fees);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
           } else {
@@ -574,7 +603,7 @@ export default function App() {
       }
   }, [country, fees]);
   
-  // Auto-calculate License Fee based on CC
+  // Auto-calculate License Fee
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -600,34 +629,16 @@ export default function App() {
     const currentCount = attachments.length;
     const maxFiles = appConfig.maxFiles || 5;
     const maxSizeKB = appConfig.maxFileSizeKB || 500;
-
-    if (currentCount + files.length > maxFiles) {
-        return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
-    }
-
+    if (currentCount + files.length > maxFiles) return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
     const newAttachments = [];
-    
     for (const file of files) {
-        if (file.size > maxSizeKB * 1024) {
-            showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error');
-            continue;
-        }
+        if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error'); continue; }
         try {
-            const base64 = await compressImage(file); // 使用圖片壓縮
-            newAttachments.push({
-                name: file.name,
-                type: file.type,
-                size: file.size, // Note: This is original size, compressed size is unknown but smaller
-                data: base64
-            });
-        } catch (error) {
-            console.error("File reading error", error);
-        }
+            const base64 = await compressImage(file, 800, 0.7); // Compress aggressively
+            newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 });
+        } catch (error) { console.error("File reading error", error); }
     }
-
-    if (newAttachments.length > 0) {
-        setAttachments(prev => [...prev, ...newAttachments]);
-    }
+    if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
     e.target.value = null; 
   };
 
@@ -638,32 +649,22 @@ export default function App() {
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp); 
-  
   let originTotal = 0;
   Object.values(currOriginFees || {}).forEach(v => originTotal += (parseFloat(v.val) || 0));
   const originTotalHKD = originTotal * rate;
-
   let hkMiscTotal = 0;
   Object.values(currHkMiscFees || {}).forEach(v => hkMiscTotal += (parseFloat(v.val) || 0));
-  
   let hkLicenseTotal = 0; 
   Object.values(currHkLicenseFees || {}).forEach(v => hkLicenseTotal += (parseFloat(v.val) || 0));
   const totalLicenseCost = hkLicenseTotal + frt;
-
   const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal + frt;
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // --- NEW: Save Config Helper to handle specific updates ---
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
       const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
-      try { 
-          await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
-          showMsg("設定已儲存"); 
-      } catch(e) { 
-          showMsg("儲存失敗", "error"); 
-      }
+      try { await setDoc(getSettingsRef(), dataToSave, { merge: false }); showMsg("設定已儲存"); } catch(e) { showMsg("儲存失敗", "error"); }
   };
 
   const saveHistoryRecord = async () => {
@@ -676,44 +677,16 @@ export default function App() {
           timestamp: serverTimestamp(),
           country, details,
           vals: { carPrice, prp, rate },
-          fees: { 
-            origin: currOriginFees, 
-            hk_misc: currHkMiscFees,
-            hk_license: currHkLicenseFees
-          },
-          results: { 
-            carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost 
-          },
+          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
+          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
           attachments: attachments, 
           isLocked: false
       };
-      
-      // Check approximate size (Base64 string length)
-      const size = JSON.stringify(record).length;
-      if (size > 900000) { // Limit < 1MB
-          return showMsg("記錄過大（圖片過多），請減少圖片後重試。", "error");
-      }
 
-      try {
-        await addDoc(getHistoryRef(), record);
-        showMsg("已記錄");
-        setTimeout(() => setActiveTab('history'), 500);
-      } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
-  };
+      // Size check
+      if (JSON.stringify(record).length > 950000) return showMsg("記錄過大，請減少圖片。", "error");
 
-  // --- Ensure function is defined before usage ---
-  const generateCurrentReport = () => {
-      if(totalCost <= 0) return showMsg("無效的計算數據", "error");
-      const currentData = {
-          details,
-          vals: { carPrice, prp, rate },
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
-          country,
-          date: new Date().toLocaleString('zh-HK'),
-          attachments
-      };
-      setReportData(currentData);
+      try { await addDoc(getHistoryRef(), record); showMsg("已記錄"); setTimeout(() => setActiveTab('history'), 500); } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
@@ -727,16 +700,12 @@ export default function App() {
       setAttachments(item.attachments || []); 
       setActiveTab('calculator'); showMsg("記錄已載入");
   };
-  const generateReport = (item) => { setReportData(item); };
 
   const closeReport = () => {
-      if (reportData) {
-          loadHistoryItem(reportData);
-      }
+      if (reportData) { loadHistoryItem(reportData); }
       setReportData(null);
   };
 
-  // Inventory Handlers
   const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
   const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
   const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
@@ -745,7 +714,6 @@ export default function App() {
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
 
-  // --- LOGO Handling ---
   const handleLogoUpload = async (e) => {
       const file = e.target.files[0];
       if(!file) return;
@@ -763,7 +731,6 @@ export default function App() {
       showMsg("Logo 已移除");
   };
 
-  // --- Dynamic Favicon Effect ---
   useEffect(() => {
     if (appConfig.logo) {
       let link = document.querySelector("link[rel~='icon']");
@@ -788,7 +755,6 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
-                      {/* 3. LOGO 顯示優化 (放大，無白邊) */}
                       {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
                       HK入車系統
                   </div>
