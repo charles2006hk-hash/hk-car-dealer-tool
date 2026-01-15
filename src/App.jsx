@@ -4,7 +4,8 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// 引入 initializeFirestore 和 memoryLocalCache 以進行進階設定
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
@@ -498,7 +499,12 @@ export default function App() {
           try {
               const app = initializeApp(MANUAL_FIREBASE_CONFIG);
               const auth = getAuth(app);
-              const firestore = getFirestore(app);
+              // CRITICAL: Force Long Polling to avoid connection errors in restricted envs
+              const firestore = initializeFirestore(app, {
+                 experimentalForceLongPolling: true,
+                 localCache: memoryLocalCache()
+              });
+              
               await setPersistence(auth, inMemoryPersistence);
               await signInAnonymously(auth);
               onAuthStateChanged(auth, (user) => { if (user) { setUserId(user.uid); setDb(firestore); } setIsReady(true); });
