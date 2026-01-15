@@ -4,7 +4,7 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
@@ -118,7 +118,7 @@ const getLicenseFeeByCC = (cc) => {
 };
 
 // --- IMAGE COMPRESSION HELPER ---
-const compressImage = (file, maxWidth = 800, quality = 0.6) => {
+const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -127,18 +127,19 @@ const compressImage = (file, maxWidth = 800, quality = 0.6) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const scaleSize = maxWidth / img.width;
+        const MAX_WIDTH = 800; 
+        const scaleSize = MAX_WIDTH / img.width;
         let width = img.width;
         let height = img.height;
-        if (width > maxWidth) {
-            width = maxWidth;
+        if (width > MAX_WIDTH) {
+            width = MAX_WIDTH;
             height = img.height * scaleSize;
         }
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         resolve(dataUrl);
       };
       img.onerror = (err) => reject(err);
@@ -251,211 +252,199 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- REPORT COMPONENT (PURE VIEW STRATEGY FOR PRINTING) ---
+// --- REPORT COMPONENT (IFRAME PRINT STRATEGY) ---
 const PrintableReport = ({ data, onClose, logo }) => {
     const { details, vals, fees, results, country, date, attachments } = data;
-    
-    // Format helpers
+    const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
     const fmtLocal = (n) => {
         const symbol = COUNTRIES[country].symbol;
         const val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
         return `${symbol}${val}`;
     };
-    const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-    // Trigger browser print
+    // 終極列印解決方案：使用 Iframe 隔離主頁面
     const handlePrint = () => {
-        // A small timeout ensures images are loaded before print dialog opens
-        setTimeout(() => window.print(), 100);
+        const content = document.getElementById('printable-content').innerHTML;
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Vehicle Quotation</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+                    body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    @page { size: A4 portrait; margin: 0; }
+                    /* Container fixed to A4 dimensions */
+                    .a4-container { width: 210mm; min-height: 297mm; padding: 10mm 15mm; margin: 0 auto; background: white; display: flex; flex-direction: column; justify-content: space-between; }
+                    .no-print { display: none !important; }
+                </style>
+            </head>
+            <body>
+                <div class="a4-container">
+                    ${content}
+                </div>
+            </body>
+            <script>
+                // Wait for styles and images
+                window.onload = () => {
+                    setTimeout(() => {
+                        window.print();
+                    }, 800);
+                };
+            </script>
+            </html>
+        `);
+        doc.close();
+        
+        // Clean up iframe after a delay
+        setTimeout(() => document.body.removeChild(iframe), 3000);
     };
 
-    // Calculate totals
     const hkMiscFees = fees.hk_misc || {};
     const hkLicenseFees = fees.hk_license || {};
     const safeHkMiscTotal = results.hkMiscTotal !== undefined ? results.hkMiscTotal : Object.values(hkMiscFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0);
     const safeHkLicenseTotal = results.hkLicenseTotal !== undefined ? results.hkLicenseTotal : (Object.values(hkLicenseFees).reduce((acc, curr) => acc + (parseFloat(curr.val) || 0), 0) + (results.frt || 0));
 
-    // Determine font sizes based on content density (optional refinement)
-    const baseTextSize = "text-[10px]"; 
-    const headerTextSize = "text-xs";
-
     return (
-        <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-start py-8 print:p-0 print:bg-white print:h-screen print:overflow-hidden">
-            
-            {/* Global Print Styles */}
-            <style>{`
-                @media print {
-                    @page { 
-                        size: A4 portrait; 
-                        margin: 0;
-                    }
-                    html, body { 
-                        height: 100%; 
-                        margin: 0 !important; 
-                        padding: 0 !important; 
-                        background: white;
-                        overflow: hidden;
-                    }
-                    /* Hide everything that is NOT the report container */
-                    body > *:not(#report-root) {
-                        display: none !important;
-                    }
-                    /* Ensure report root is visible and takes full page */
-                    #report-root {
-                        display: block !important;
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 210mm;
-                        height: 297mm;
-                        margin: 0;
-                        padding: 0;
-                        background: white;
-                    }
-                    .no-print { display: none !important; }
-                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                }
-            `}</style>
-
-            {/* Toolbar (Hidden on Print) */}
-            <div className="w-full max-w-[210mm] flex justify-between items-center mb-6 px-4 no-print">
-                <button onClick={onClose} className="flex items-center gap-2 px-5 py-2.5 bg-white text-slate-700 border-2 border-slate-300 rounded-full shadow-lg hover:bg-slate-50 font-bold transition"><ArrowLeft className="w-5 h-5"/> 返回</button>
-                <button onClick={handlePrint} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 font-bold transition"><Printer className="w-5 h-5"/> 列印 / PDF</button>
-            </div>
-
-            {/* The A4 Report Container (This is what gets printed) */}
-            <div id="report-root" className="w-full max-w-[210mm] min-h-[297mm] bg-white shadow-2xl print:shadow-none relative box-border">
-                <div className="h-full flex flex-col justify-between p-[12mm]"> 
-                    
-                    {/* Top Content Group */}
-                    <div className="flex-grow">
-                        {/* Header */}
-                        <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-5">
-                            <div>
-                                <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none mb-1">車輛成本估價單</h1>
-                                <p className="text-sm text-slate-600 font-bold">日期: {date}</p>
-                            </div>
-                            <div className="text-right">
-                                {logo ? (
-                                    <img src={logo} alt="Logo" className="h-16 object-contain mb-1 ml-auto" />
-                                ) : (
-                                    <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>
-                                )}
-                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Internal Use Only</p>
-                            </div>
+        <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-md flex justify-center overflow-auto p-4 md:p-8">
+            <div className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl origin-top transform transition-transform scale-100">
+                
+                {/* This content is cloned into the iframe */}
+                <div id="printable-content" className="p-10 text-slate-900 h-full flex flex-col font-sans min-h-[297mm] bg-white">
+                    {/* Header */}
+                    <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
+                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
+                        <div className="text-right">
+                             {logo ? (
+                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-1 ml-auto" />
+                            ) : (
+                                <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>
+                            )}
+                            <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
-
-                        {/* 1. Car Details */}
-                        <div className="mb-4">
-                            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-1 border-l-4 border-blue-600 pl-2">車輛資料</h3>
-                            <div className="grid grid-cols-4 gap-y-1 gap-x-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">品牌</span> <span className="font-bold text-xs text-black">{details.manufacturer}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">型號</span> <span className="font-bold text-xs text-black">{details.model}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">年份</span> <span className="font-bold text-xs text-black">{details.year}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">代號</span> <span className="font-bold text-xs text-black">{details.code}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">排氣量</span> <span className="font-bold text-black text-xs">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">座位</span> <span className="font-bold text-black text-xs">{details.seats || '-'}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">外觀</span> <span className="font-bold text-black text-xs">{details.exteriorColor || '-'}</span></div>
-                                <div><span className="text-slate-500 block text-[9px] font-bold uppercase">內飾</span> <span className="font-bold text-black text-xs">{details.interiorColor || '-'}</span></div>
-                                <div className="col-span-4 border-t border-slate-200 pt-1 mt-1 flex items-center gap-2">
-                                    <span className="text-slate-500 text-[9px] font-bold uppercase">車身號碼:</span> 
-                                    <span className="font-mono font-black text-xs text-black">{details.chassisNo || '-'}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 2. Core Costs Table */}
-                        <div className="mb-4">
-                            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-1 border-l-4 border-blue-600 pl-2">核心成本</h3>
-                            <div className="border border-slate-300 rounded-lg overflow-hidden">
-                                <table className="w-full text-[10px]">
-                                    <thead className="bg-slate-200 text-slate-900">
-                                        <tr>
-                                            <th className="text-left py-1 px-2 font-black">項目</th>
-                                            <th className="text-right py-1 px-2 font-black">金額 ({COUNTRIES[country].currency})</th>
-                                            <th className="text-right py-1 px-2 font-black">匯率</th>
-                                            <th className="text-right py-1 px-2 font-black bg-blue-100">港幣 (HKD)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className='divide-y divide-slate-200'>
-                                        <tr>
-                                            <td className="py-1 px-2 font-bold text-slate-800">當地車價</td>
-                                            <td className="text-right px-2 font-mono font-bold">{fmtLocal(vals.carPrice)}</td>
-                                            <td className="text-right px-2 font-mono font-bold">{vals.rate}</td>
-                                            <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="py-1 px-2 font-bold text-slate-800">當地雜費 <span className='text-[9px] font-normal text-slate-500'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
-                                            <td className="text-right px-2 text-slate-400">-</td>
-                                            <td className="text-right px-2 text-slate-400">-</td>
-                                            <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* 3. Breakdown Grid (Compact) */}
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div className="border border-slate-300 rounded p-2">
-                                <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
-                                <ul className="text-[10px] space-y-0.5">
-                                    {Object.entries(hkMiscFees).map(([k, v]) => (
-                                        <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black font-bold">${v.val}</span></li>
-                                    ))}
-                                    <li className="flex justify-between items-center font-black border-t border-slate-800 pt-1 mt-1 bg-slate-100 px-1 rounded"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
-                                </ul>
-                            </div>
-                            <div className="border border-slate-300 rounded p-2">
-                                <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4>
-                                <ul className="text-[10px] space-y-0.5">
-                                    {Object.entries(hkLicenseFees).map(([k, v]) => (
-                                        <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black font-bold">${v.val}</span></li>
-                                    ))}
-                                    <li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded border border-orange-100"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
-                                    <li className="text-[9px] text-slate-400 text-right -mt-0.5 mb-0.5 font-bold">(PRP: ${new Intl.NumberFormat('en-US').format(vals.prp)})</li>
-                                    <li className="flex justify-between items-center font-black border-t border-slate-800 pt-1 mt-1 bg-slate-100 px-1 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
-                                </ul>
-                            </div>
-                        </div>
-
-                        {/* 4. Attachments (Images) - Limit height to prevent overflow */}
-                        {attachments && attachments.length > 0 && (
-                            <div className="mb-2">
-                                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
-                                <div className="grid grid-cols-5 gap-2">
-                                    {attachments.slice(0, 5).map((file, idx) => (
-                                        <div key={idx} className="border border-slate-200 rounded p-0.5 flex flex-col items-center bg-slate-50 h-16 overflow-hidden">
-                                            {file.type.startsWith('image/') ? (
-                                                <img src={file.data} className="w-full h-full object-cover rounded-sm" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-5 h-5" /></div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
 
-                    {/* Footer Totals (Sticky Bottom of Report) */}
-                    <div className="mt-2 pt-2 border-t-4 border-slate-800">
-                        <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-300">
+                    {/* Car Details */}
+                    <div className="mb-4">
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
+                        <div className="grid grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">品牌</span> <span className="font-bold text-sm text-black">{details.manufacturer}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">型號</span> <span className="font-bold text-sm text-black">{details.model}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">年份</span> <span className="font-bold text-sm text-black">{details.year}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">代號</span> <span className="font-bold text-sm text-black">{details.code}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
+                            <div className="col-span-4 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
+                        </div>
+                    </div>
+
+                    {/* Core Costs */}
+                    <div className="mb-4">
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
+                        <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden">
+                            <thead className="bg-slate-200 text-slate-900">
+                                <tr>
+                                    <th className="text-left py-1 px-2 font-black border-b-2 border-slate-400">項目</th>
+                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
+                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">匯率</th>
+                                    <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th>
+                                </tr>
+                            </thead>
+                            <tbody className='divide-y divide-slate-300'>
+                                <tr>
+                                    <td className="py-1 px-2 font-bold text-slate-900">當地車價</td>
+                                    <td className="text-right px-2 font-mono font-bold">{fmtLocal(vals.carPrice)}</td>
+                                    <td className="text-right px-2 font-mono font-bold">{vals.rate}</td>
+                                    <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
+                                </tr>
+                                <tr>
+                                    <td className="py-1 px-2 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
+                                    <td className="text-right px-2 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-2 text-slate-500 font-bold">-</td>
+                                    <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Breakdown Grid */}
+                    <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0">
+                        <div className="border border-slate-300 rounded p-2">
+                            <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
+                            <ul className="text-[10px] space-y-0.5">
+                                {Object.entries(hkMiscFees).map(([k, v]) => (
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                ))}
+                                <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
+                            </ul>
+                        </div>
+                        <div className="border border-slate-300 rounded p-2">
+                            <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4>
+                            <ul className="text-[10px] space-y-0.5">
+                                {Object.entries(hkLicenseFees).map(([k, v]) => (
+                                    <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                ))}
+                                <li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
+                                <li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${new Intl.NumberFormat('en-US').format(vals.prp)})</li>
+                                <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Attachments - Compact Grid */}
+                    {attachments && attachments.length > 0 && (
+                        <div className="mb-4 flex-grow-0">
+                            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
+                            <div className="grid grid-cols-5 gap-2">
+                                {attachments.slice(0, 5).map((file, idx) => (
+                                    <div key={idx} className="border-2 border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden">
+                                        {file.type.startsWith('image/') ? (
+                                            <img src={file.data} className="w-full h-full object-cover rounded-sm" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Footer Totals (Compact Horizontal Bar) */}
+                    <div className="mt-auto border-t-4 border-slate-800 pt-3">
+                        <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300">
                              <div className="flex flex-col">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase">車輛到港成本</span>
                                 <span className="text-xl font-black text-slate-800 leading-tight">{fmt(results.landedCost)}</span>
-                                <span className="text-[9px] text-slate-400 font-medium">(含A1稅，不含牌費保險)</span>
                              </div>
-                             
+                             <div className="h-8 w-px bg-slate-300 mx-4"></div>
                              <div className="flex flex-col text-right">
                                 <span className="text-[10px] font-bold text-blue-600 uppercase">預計總成本 (Total)</span>
                                 <span className="text-3xl font-black text-blue-800 leading-tight">{fmt(results.totalCost)}</span>
                              </div>
                         </div>
                         <div className="text-center text-[9px] text-slate-400 mt-2 font-bold uppercase">
-                             © {new Date().getFullYear()} HK Car Dealer Tool | Confidential Document
+                             © {new Date().getFullYear()} HK Car Dealer Tool | Confidential
                         </div>
                     </div>
+                </div>
+
+                <div className="absolute top-4 right-4 flex gap-2 no-print">
+                     <button onClick={handlePrint} className="bg-blue-700 text-white px-5 py-2 rounded-full shadow-xl hover:bg-blue-800 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95 border-2 border-blue-900"><Printer className="w-5 h-5" /> 列印 / PDF</button>
+                     <button onClick={onClose} className="bg-white text-slate-900 border-2 border-slate-400 px-5 py-2 rounded-full shadow-xl hover:bg-slate-100 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95"><ArrowLeft className="w-5 h-5" /> 返回計算器</button>
                 </div>
             </div>
         </div>
@@ -475,16 +464,14 @@ export default function App() {
   const [isKeyEditing, setIsKeyEditing] = useState(false);
   const [tempKey, setTempKey] = useState('');
 
-  // View State: Calculator, History, Settings, OR 'report' (which hides others)
   const [activeTab, setActiveTab] = useState('calculator');
-  const [reportData, setReportData] = useState(null); // When set, we show report view
-
   const [country, setCountry] = useState('JP');
   const [rates, setRates] = useState(DEFAULT_RATES);
   const [fees, setFees] = useState(DEFAULT_FEES);
   const [appConfig, setAppConfig] = useState(DEFAULT_CONFIG); 
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
   const [history, setHistory] = useState([]);
+  const [reportData, setReportData] = useState(null);
 
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
@@ -505,25 +492,13 @@ export default function App() {
       setTimeout(() => setSaveMsg(null), 3000);
   };
 
-  // Firebase Init (Optimized)
+  // Firebase Init
   useEffect(() => {
       const init = async () => {
           try {
-              // Ensure one instance
               const app = initializeApp(MANUAL_FIREBASE_CONFIG);
               const auth = getAuth(app);
-              
-              // Force Long Polling for stability
-              let firestore;
-              try {
-                  firestore = initializeFirestore(app, {
-                      experimentalForceLongPolling: true,
-                      localCache: memoryLocalCache(),
-                  });
-              } catch (e) {
-                  firestore = getFirestore(app);
-              }
-              
+              const firestore = getFirestore(app);
               await setPersistence(auth, inMemoryPersistence);
               await signInAnonymously(auth);
               onAuthStateChanged(auth, (user) => { if (user) { setUserId(user.uid); setDb(firestore); } setIsReady(true); });
@@ -535,7 +510,7 @@ export default function App() {
   const getSettingsRef = useCallback(() => db && dataKey ? doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/settings/config`) : null, [db, dataKey]);
   const getHistoryRef = useCallback(() => db && dataKey ? collection(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`) : null, [db, dataKey]);
 
-  // Sync Settings
+  // Sync Settings - **AUTO MIGRATION FIX**
   useEffect(() => {
       const ref = getSettingsRef();
       if (!ref) return;
@@ -543,12 +518,20 @@ export default function App() {
           if (snap.exists()) {
               const d = snap.data();
               let loadedFees = d.fees;
-              // Auto Migration
+              
+              // 1. 自動檢測舊的 UK/OT 結構並更新 (Force Migration)
               if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
-                  console.log("Migrating fees...");
-                  loadedFees = { ...loadedFees, UK: DEFAULT_FEES.UK, OT: DEFAULT_FEES.OT };
+                  console.log("Detected old fee structure. Migrating to new structure...");
+                  // 使用新結構覆蓋舊結構
+                  loadedFees = {
+                      ...loadedFees,
+                      UK: DEFAULT_FEES.UK,
+                      OT: DEFAULT_FEES.OT || DEFAULT_FEES.UK // Ensure OT also gets updated
+                  };
                   setDoc(ref, { fees: loadedFees }, { merge: true });
+                  showMsg("系統已自動更新費用結構至最新版本");
               }
+
               if(d.rates) setRates(d.rates);
               setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
@@ -585,6 +568,7 @@ export default function App() {
       }
   }, [country, fees]);
   
+  // Auto-calculate License Fee based on CC
   useEffect(() => {
       if (details.engineCapacity) {
           const fee = getLicenseFeeByCC(details.engineCapacity);
@@ -610,16 +594,34 @@ export default function App() {
     const currentCount = attachments.length;
     const maxFiles = appConfig.maxFiles || 5;
     const maxSizeKB = appConfig.maxFileSizeKB || 500;
-    if (currentCount + files.length > maxFiles) return showMsg(`最多 ${maxFiles} 個文件`, 'error');
-    const newAttachments = [];
-    for (const file of files) {
-        if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 過大`, 'error'); continue; }
-        try {
-            const base64 = await compressImage(file, 800, 0.7);
-            newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 });
-        } catch (error) { console.error(error); }
+
+    if (currentCount + files.length > maxFiles) {
+        return showMsg(`最多只能上傳 ${maxFiles} 個文件`, 'error');
     }
-    if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
+
+    const newAttachments = [];
+    
+    for (const file of files) {
+        if (file.size > maxSizeKB * 1024) {
+            showMsg(`${file.name} 超過 ${maxSizeKB}KB 限制`, 'error');
+            continue;
+        }
+        try {
+            const base64 = await compressImage(file); // 使用圖片壓縮
+            newAttachments.push({
+                name: file.name,
+                type: file.type,
+                size: file.size, // Note: This is original size, compressed size is unknown but smaller
+                data: base64
+            });
+        } catch (error) {
+            console.error("File reading error", error);
+        }
+    }
+
+    if (newAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...newAttachments]);
+    }
     e.target.value = null; 
   };
 
@@ -630,22 +632,38 @@ export default function App() {
   const rate = rates[country] || 0;
   const carPriceHKD = (parseFloat(carPrice) || 0) * rate;
   const frt = calculateFRT(prp); 
+  
   let originTotal = 0;
   Object.values(currOriginFees || {}).forEach(v => originTotal += (parseFloat(v.val) || 0));
   const originTotalHKD = originTotal * rate;
+
   let hkMiscTotal = 0;
   Object.values(currHkMiscFees || {}).forEach(v => hkMiscTotal += (parseFloat(v.val) || 0));
+  
   let hkLicenseTotal = 0; 
   Object.values(currHkLicenseFees || {}).forEach(v => hkLicenseTotal += (parseFloat(v.val) || 0));
   const totalLicenseCost = hkLicenseTotal + frt;
+
   const landedCost = carPriceHKD + originTotalHKD + hkMiscTotal + frt;
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
+  // --- NEW: Save Config Helper to handle specific updates ---
+  // [MODIFIED] Added robustness check for event objects
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
-      const dataToSave = { rates, fees, inventory, appConfig, ...overrides };
-      try { await setDoc(getSettingsRef(), dataToSave, { merge: false }); showMsg("設定已儲存"); } catch(e) { showMsg("儲存失敗", "error"); }
+      
+      // FIX: 如果 overrides 是事件對象 (React SyntheticEvent)，則強制為空對象
+      const validOverrides = (overrides && overrides.preventDefault) ? {} : overrides;
+
+      const dataToSave = { rates, fees, inventory, appConfig, ...validOverrides };
+      try { 
+          await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
+          showMsg("設定已儲存"); 
+      } catch(e) { 
+          console.error("Save failed:", e);
+          showMsg("儲存失敗: " + e.message, "error"); 
+      }
   };
 
   const saveHistoryRecord = async () => {
@@ -658,16 +676,32 @@ export default function App() {
           timestamp: serverTimestamp(),
           country, details,
           vals: { carPrice, prp, rate },
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
+          fees: { 
+            origin: currOriginFees, 
+            hk_misc: currHkMiscFees,
+            hk_license: currHkLicenseFees
+          },
+          results: { 
+            carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost 
+          },
           attachments: attachments, 
           isLocked: false
       };
-      // Size check
-      if (JSON.stringify(record).length > 950000) return showMsg("記錄過大，請減少圖片。", "error");
-      try { await addDoc(getHistoryRef(), record); showMsg("已記錄"); setTimeout(() => setActiveTab('history'), 500); } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
+      
+      // Check approximate size (Base64 string length)
+      const size = JSON.stringify(record).length;
+      if (size > 900000) { // Limit < 1MB
+          return showMsg("記錄過大（圖片過多），請減少圖片後重試。", "error");
+      }
+
+      try {
+        await addDoc(getHistoryRef(), record);
+        showMsg("已記錄");
+        setTimeout(() => setActiveTab('history'), 500);
+      } catch(e) { showMsg("儲存失敗: " + e.message, "error"); }
   };
 
+  // --- Ensure function is defined before usage ---
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -693,12 +727,16 @@ export default function App() {
       setAttachments(item.attachments || []); 
       setActiveTab('calculator'); showMsg("記錄已載入");
   };
+  const generateReport = (item) => { setReportData(item); };
 
   const closeReport = () => {
-      if (reportData) loadHistoryItem(reportData);
+      if (reportData) {
+          loadHistoryItem(reportData);
+      }
       setReportData(null);
   };
 
+  // Inventory Handlers
   const addMfr = () => { if (!newManufacturer) return; const name = newManufacturer.trim(); if (inventory[name]) return showMsg("已存在", "error"); const newInventory = { ...inventory, [name]: { models: [] } }; setInventory(newInventory); setNewManufacturer(''); saveConfig({ inventory: newInventory }); };
   const deleteMfr = (mfr) => { setModal({ title: "刪除品牌", message: `確定刪除 ${mfr}？`, type: "danger", onConfirm: () => { const newInventory = {...inventory}; delete newInventory[mfr]; setInventory(newInventory); setEditingMfr(null); setModal(null); saveConfig({ inventory: newInventory }); } }); };
   const addModel = (mfr) => { if(!newModel.id) return; const newCar = { id: newModel.id.trim(), years: newModel.years.split(',').filter(Boolean), codes: newModel.codes.split(',').filter(Boolean) }; const newInventory = { ...inventory, [mfr]: { ...inventory[mfr], models: [...(inventory[mfr].models || []), newCar] } }; setInventory(newInventory); setNewModel({ id: '', years: '', codes: '' }); saveConfig({ inventory: newInventory }); };
@@ -707,6 +745,7 @@ export default function App() {
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
 
+  // --- LOGO Handling ---
   const handleLogoUpload = async (e) => {
       const file = e.target.files[0];
       if(!file) return;
@@ -724,6 +763,7 @@ export default function App() {
       showMsg("Logo 已移除");
   };
 
+  // --- Dynamic Favicon Effect ---
   useEffect(() => {
     if (appConfig.logo) {
       let link = document.querySelector("link[rel~='icon']");
@@ -738,21 +778,17 @@ export default function App() {
 
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
-  // IMPORTANT: View Swap for Printing
-  // If reportData is present, ONLY render the report component. This ensures clean printing.
-  if (reportData) {
-      return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} />;
-  }
-
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-20 font-sans">
       <ConfirmationModal config={modal} onClose={() => setModal(null)} />
       {previewImage && <ImagePreviewModal file={previewImage} onClose={() => setPreviewImage(null)} />}
+      {reportData && <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} />}
 
       <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-xl print:hidden border-b-4 border-blue-600">
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
+                      {/* 3. LOGO 顯示優化 (放大，無白邊) */}
                       {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
                       HK入車系統
                   </div>
@@ -1000,7 +1036,11 @@ export default function App() {
                            </div>
                        ))}
                    </Card>
-                   <div className="flex justify-end gap-4"><button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button><button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button></div>
+                   <div className="flex justify-end gap-4">
+                        <button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button>
+                        {/* FIX: Use Arrow function to prevent passing Event object to saveConfig */}
+                        <button onClick={() => saveConfig()} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button>
+                   </div>
               </div>
           )}
       </div>
