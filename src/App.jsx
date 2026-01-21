@@ -4,7 +4,7 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
@@ -117,6 +117,7 @@ const getLicenseFeeByCC = (cc) => {
     return 14694; 
 };
 
+// --- IMAGE COMPRESSION HELPER ---
 const compressImage = (file, maxWidth = 800, quality = 0.6) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -182,14 +183,7 @@ const InputGroup = ({ label, value, onChange, prefix, placeholder = "", required
       {label && <label className="block text-sm font-bold text-slate-800 mb-1.5">{label}{required && <span className="text-red-600 ml-1">*</span>}</label>}
       <div className="relative rounded-md shadow-sm">
         {prefix && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><span className="text-slate-600 font-bold sm:text-sm">{prefix}</span></div>}
-        <input 
-          type={type === 'number' ? 'text' : type} 
-          inputMode={type === 'number' ? 'decimal' : 'text'}
-          className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} 
-          placeholder={placeholder} 
-          value={displayValue} 
-          onChange={handleChange} 
-        />
+        <input type={type === 'number' ? 'text' : type} inputMode={type === 'number' ? 'decimal' : 'text'} className={`block w-full rounded-lg py-2.5 ${prefix ? 'pl-8' : 'pl-3'} pr-3 text-black placeholder:text-slate-400 focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm border-2 border-slate-400 font-bold shadow-sm transition-colors`} placeholder={placeholder} value={displayValue} onChange={handleChange} />
       </div>
     </div>
   );
@@ -232,7 +226,24 @@ const ConfirmationModal = ({ config, onClose }) => {
     );
 };
 
-// --- NEW PAYMENT MODAL ---
+const ImagePreviewModal = ({ file, onClose }) => {
+    if (!file) return null;
+    return (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full hover:bg-white/10 transition"><X className="w-10 h-10" /></button>
+            <div className="relative w-full h-full flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
+                <img src={file.data} alt={file.name} className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl" />
+                <div className="mt-6 flex gap-4">
+                    <a href={file.data} download={file.name} className="flex items-center gap-2 bg-white text-slate-900 px-8 py-3 rounded-full font-bold shadow-2xl hover:bg-slate-100 transition transform hover:scale-105" onClick={(e) => e.stopPropagation()}>
+                        <Download className="w-5 h-5" /> 下載原圖
+                    </a>
+                </div>
+                <div className="mt-4 text-white/60 text-sm font-mono">{file.name}</div>
+            </div>
+        </div>
+    );
+};
+
 const PaymentModal = ({ historyItem, onClose, onSave }) => {
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -240,12 +251,7 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
 
     const handleSave = () => {
         if (!amount || isNaN(parseFloat(amount))) return alert('請輸入有效金額');
-        onSave({
-            amount: parseFloat(amount),
-            date,
-            note,
-            createdAt: Date.now()
-        });
+        onSave({ amount: parseFloat(amount), date, note, createdAt: Date.now() });
         onClose();
     };
 
@@ -260,16 +266,12 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
                     <h3 className="font-black flex gap-2 items-center text-xl text-slate-800"><CreditCard className="w-6 h-6 text-green-600"/> 付款管理</h3>
                     <button onClick={onClose}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
                 </div>
-                
                 <div className="p-6 space-y-4">
-                    {/* Summary */}
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <div className="flex justify-between mb-1"><span className="text-slate-500 font-bold">總金額</span><span className="font-black text-slate-800">${new Intl.NumberFormat().format(historyItem.results.totalCost)}</span></div>
                         <div className="flex justify-between mb-1"><span className="text-green-600 font-bold">已付總額</span><span className="font-black text-green-600">${new Intl.NumberFormat().format(totalPaid)}</span></div>
                         <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="text-red-600 font-bold text-lg">尚欠餘額</span><span className="font-black text-red-600 text-lg">${new Intl.NumberFormat().format(balance)}</span></div>
                     </div>
-
-                    {/* Add Payment Form */}
                     <div className="space-y-3 pt-2">
                         <h4 className="font-bold text-slate-700 text-sm uppercase">新增付款</h4>
                         <div className="grid grid-cols-2 gap-3">
@@ -279,8 +281,6 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
                         <input type="text" placeholder="備註 (e.g. 訂金)" value={note} onChange={e => setNote(e.target.value)} className="w-full p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
                         <button onClick={handleSave} className="w-full bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700 shadow-md">確認付款</button>
                     </div>
-
-                    {/* History List */}
                     {existingPayments.length > 0 && (
                         <div className="mt-4">
                             <h4 className="font-bold text-slate-700 text-sm uppercase mb-2">付款紀錄</h4>
@@ -301,34 +301,19 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
     );
 };
 
-const ImagePreviewModal = ({ file, onClose }) => {
-    if (!file) return null;
-    return (
-        <div className="fixed inset-0 bg-black/95 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full hover:bg-white/10 transition"><X className="w-10 h-10" /></button>
-            <div className="relative w-full h-full flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-                <img src={file.data} alt={file.name} className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl" />
-                <div className="mt-6 flex gap-4">
-                    <a href={file.data} download={file.name} className="flex items-center gap-2 bg-white text-slate-900 px-8 py-3 rounded-full font-bold shadow-2xl hover:bg-slate-100 transition transform hover:scale-105" onClick={(e) => e.stopPropagation()}>
-                        <Download className="w-5 h-5" /> 下載原圖
-                    </a>
-                </div>
-                <div className="mt-4 text-white/60 text-sm font-mono">{file.name}</div>
-            </div>
-        </div>
-    );
-};
-
-// --- RECEIPT COMPONENT (NEW) ---
-const PrintableReceipt = ({ data, onClose, logo }) => {
-    const { details, results, date, payments = [] } = data;
+// --- REPORT COMPONENT (IFRAME STRATEGY) ---
+const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" }) => {
+    const { details, vals, fees, results, country, date, attachments, payments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
-    const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
-    const balance = results.totalCost - totalPaid;
+    const fmtLocal = (n) => {
+        const symbol = COUNTRIES[country]?.symbol || '';
+        const val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
+        return `${symbol}${val}`;
+    };
 
+    // Use Iframe for printing to solve blank page issues
     const handlePrint = () => {
-        // Same iframe strategy
-        const content = document.getElementById('receipt-content').innerHTML;
+        const content = document.getElementById('printable-report-content').innerHTML;
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
         iframe.style.right = '0';
@@ -337,114 +322,37 @@ const PrintableReceipt = ({ data, onClose, logo }) => {
         iframe.style.height = '0';
         iframe.style.border = '0';
         document.body.appendChild(iframe);
+
         const doc = iframe.contentWindow.document;
         doc.open();
         doc.write(`
-            <html><head><title>Receipt</title><script src="https://cdn.tailwindcss.com"></script><style>@page { size: A4; margin: 0; } body { margin: 0; padding: 0; } .receipt-page { padding: 15mm; height: 297mm; display: flex; flex-direction: column; }</style></head><body><div class="receipt-page">${content}</div><script>window.onload=()=>{setTimeout(()=>{window.print()},500)}</script></body></html>
-        `);
-        doc.close();
-        setTimeout(() => document.body.removeChild(iframe), 3000);
-    };
-
-    return (
-        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex justify-center overflow-auto p-4">
-             <div className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl">
-                 <div id="receipt-content" className="p-12 text-slate-900 font-sans h-full flex flex-col">
-                     {/* Header */}
-                     <div className="flex justify-between items-start border-b-4 border-slate-900 pb-6 mb-8">
-                         <div>
-                             <h1 className="text-4xl font-black text-slate-900">Gold Land Auto 金田汽車</h1>
-                             <p className="text-sm font-bold text-slate-600 mt-2">正式收據 / Official Receipt</p>
-                             <p className="text-xs text-slate-500 mt-1">日期: {new Date().toLocaleDateString('zh-HK')}</p>
-                         </div>
-                         {logo && <img src={logo} className="h-20 object-contain" />}
-                     </div>
-
-                     {/* Car Info */}
-                     <div className="mb-8 p-6 bg-slate-50 rounded-xl border-2 border-slate-200">
-                         <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-500">車輛資料</h3>
-                         <div className="grid grid-cols-2 gap-4 text-sm font-bold">
-                             <div>品牌/型號: <span className="text-black ml-2">{details.manufacturer} {details.model}</span></div>
-                             <div>年份: <span className="text-black ml-2">{details.year}</span></div>
-                             <div>車身號碼: <span className="text-black ml-2 font-mono">{details.chassisNo || 'N/A'}</span></div>
-                             <div>顏色: <span className="text-black ml-2">{details.exteriorColor}/{details.interiorColor}</span></div>
-                         </div>
-                     </div>
-
-                     {/* Payment Table */}
-                     <div className="mb-8 flex-grow">
-                         <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-500">付款紀錄</h3>
-                         <table className="w-full text-sm border-2 border-slate-300">
-                             <thead className="bg-slate-200">
-                                 <tr>
-                                     <th className="p-3 text-left font-black">日期</th>
-                                     <th className="p-3 text-left font-black">備註</th>
-                                     <th className="p-3 text-right font-black">金額 (HKD)</th>
-                                 </tr>
-                             </thead>
-                             <tbody>
-                                 {payments.map((p, i) => (
-                                     <tr key={i} className="border-b border-slate-200">
-                                         <td className="p-3 font-bold">{p.date}</td>
-                                         <td className="p-3 font-bold">{p.note}</td>
-                                         <td className="p-3 text-right font-mono font-bold">{fmt(p.amount)}</td>
-                                     </tr>
-                                 ))}
-                                 {payments.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-slate-400 italic">暫無付款紀錄</td></tr>}
-                             </tbody>
-                         </table>
-                     </div>
-
-                     {/* Totals */}
-                     <div className="flex justify-end mb-12">
-                         <div className="w-1/2 space-y-2">
-                             <div className="flex justify-between text-slate-600 font-bold"><span>車價總額</span><span>{fmt(results.totalCost)}</span></div>
-                             <div className="flex justify-between text-green-700 font-bold"><span>已付總額</span><span>{fmt(totalPaid)}</span></div>
-                             <div className="flex justify-between text-xl font-black text-slate-900 border-t-4 border-slate-900 pt-2"><span>尚欠餘額</span><span>{fmt(balance)}</span></div>
-                         </div>
-                     </div>
-
-                     {/* Signature */}
-                     <div className="grid grid-cols-2 gap-12 mt-auto pt-12 border-t-2 border-slate-200">
-                         <div>
-                             <div className="h-20 border-b-2 border-slate-400 mb-2"></div>
-                             <p className="text-center font-bold text-slate-600">金田汽車簽署及蓋印</p>
-                         </div>
-                         <div>
-                             <div className="h-20 border-b-2 border-slate-400 mb-2"></div>
-                             <p className="text-center font-bold text-slate-600">客戶簽署確認</p>
-                         </div>
-                     </div>
-                 </div>
-
-                 <div className="absolute top-4 right-4 flex gap-2 no-print">
-                     <button onClick={handlePrint} className="bg-blue-700 text-white px-5 py-2 rounded-full shadow-xl font-bold"><Printer className="w-5 h-5" /></button>
-                     <button onClick={onClose} className="bg-white text-slate-900 border-2 border-slate-400 px-5 py-2 rounded-full shadow-xl font-bold"><X className="w-5 h-5" /></button>
+            <html>
+            <head>
+                <title>${title}</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+                    body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    @page { size: A4 portrait; margin: 0; }
+                    .a4-container { width: 210mm; min-height: 297mm; padding: 10mm 15mm; margin: 0 auto; background: white; display: flex; flex-direction: column; justify-content: space-between; }
+                    .no-print { display: none !important; }
+                </style>
+            </head>
+            <body>
+                <div class="a4-container">
+                    ${content}
                 </div>
-             </div>
-        </div>
-    );
-};
-
-// --- REPORT COMPONENT (QUOTATION) ---
-const PrintableReport = ({ data, onClose, logo }) => {
-    // ... (Keep existing report code structure, ensure iframe print logic is used)
-    const { details, vals, fees, results, country, date, attachments } = data;
-    const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
-    const fmtLocal = (n) => {
-        const symbol = COUNTRIES[country].symbol;
-        const val = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n || 0);
-        return `${symbol}${val}`;
-    };
-
-    const handlePrint = () => {
-        const content = document.getElementById('quotation-content').innerHTML;
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0'; iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(`<html><head><title>Quotation</title><script src="https://cdn.tailwindcss.com"></script><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap'); body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; } @page { size: A4 portrait; margin: 0; } .a4-container { width: 210mm; min-height: 297mm; padding: 10mm 15mm; margin: 0 auto; background: white; display: flex; flex-direction: column; justify-content: space-between; } .no-print { display: none !important; }</style></head><body><div class="a4-container">${content}</div></body><script>window.onload=()=>{setTimeout(()=>{window.print()},800)}</script></html>`);
+            </body>
+            <script>
+                // Wait for styles and images to load
+                window.onload = () => {
+                    setTimeout(() => {
+                        window.print();
+                    }, 800);
+                };
+            </script>
+            </html>
+        `);
         doc.close();
         setTimeout(() => document.body.removeChild(iframe), 3000);
     };
@@ -457,22 +365,169 @@ const PrintableReport = ({ data, onClose, logo }) => {
     return (
         <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-md flex justify-center overflow-auto p-4 md:p-8">
             <div className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl origin-top transform transition-transform scale-100">
-                <div id="quotation-content" className="p-10 text-slate-900 h-full flex flex-col font-sans min-h-[297mm] bg-white">
-                     {/* Reuse previous report UI logic here... */}
+                
+                {/* This content is cloned into the iframe */}
+                <div id="printable-report-content" className="p-10 text-slate-900 h-full flex flex-col font-sans min-h-[297mm] bg-white">
+                    {/* Header */}
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
-                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">車輛成本估價單</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
+                        <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">{title}</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
-                             {logo ? <img src={logo} className="h-20 object-contain mb-1 ml-auto" /> : <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>}
+                             {logo ? (
+                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-1 ml-auto" />
+                            ) : (
+                                <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>
+                            )}
                             <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
                     </div>
-                    {/* ... (Car Details, Tables, etc from previous version) ... */}
-                    {/* Copying the exact UI structure from previous version for Quotation */}
-                    <div className="mb-4"><h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3><div className="grid grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300"><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">品牌</span> <span className="font-bold text-sm text-black">{details.manufacturer}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">型號</span> <span className="font-bold text-sm text-black">{details.model}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">年份</span> <span className="font-bold text-sm text-black">{details.year}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">代號</span> <span className="font-bold text-sm text-black">{details.code}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位</span> <span className="font-bold text-black">{details.seats || '-'}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div><div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div><div className="col-span-4 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div></div></div>
-                    <div className="mb-4"><h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3><table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden"><thead className="bg-slate-200 text-slate-900"><tr><th className="text-left py-1 px-2 font-black border-b-2 border-slate-400">項目</th><th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th><th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">匯率</th><th className="text-right py-1 px-2 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th></tr></thead><tbody className='divide-y divide-slate-300'><tr><td className="py-1 px-2 font-bold text-slate-900">當地車價</td><td className="text-right px-2 font-mono font-bold">{fmtLocal(vals.carPrice)}</td><td className="text-right px-2 font-mono font-bold">{vals.rate}</td><td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td></tr><tr><td className="py-1 px-2 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td><td className="text-right px-2 text-slate-500 font-bold">-</td><td className="text-right px-2 text-slate-500 font-bold">-</td><td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td></tr></tbody></table></div>
-                    <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0"><div className="border border-slate-300 rounded p-2"><h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4><ul className="text-[10px] space-y-0.5">{Object.entries(hkMiscFees).map(([k, v]) => (<li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>))}<li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li></ul></div><div className="border border-slate-300 rounded p-2"><h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4><ul className="text-[10px] space-y-0.5">{Object.entries(hkLicenseFees).map(([k, v]) => (<li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>))}<li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded border border-orange-100"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li><li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${new Intl.NumberFormat('en-US').format(vals.prp)})</li><li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li></ul></div></div>
-                    {attachments && attachments.length > 0 && (<div className="mb-4 flex-grow-0"><h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3><div className="grid grid-cols-5 gap-2">{attachments.slice(0, 5).map((file, idx) => (<div key={idx} className="border-2 border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden">{file.type.startsWith('image/') ? (<img src={file.data} className="w-full h-full object-cover rounded-sm" />) : (<div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>)}</div>))}</div></div>)}
-                    <div className="mt-auto border-t-4 border-slate-800 pt-3"><div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300"><div className="flex flex-col"><span className="text-[10px] font-bold text-slate-500 uppercase">車輛到港成本</span><span className="text-xl font-black text-slate-800 leading-tight">{fmt(results.landedCost)}</span><span className="text-[9px] text-slate-400 font-medium">(含A1稅，不含牌費保險)</span></div><div className="h-8 w-px bg-slate-300 mx-4"></div><div className="flex flex-col text-right"><span className="text-[10px] font-bold text-blue-600 uppercase">預計總成本 (Total)</span><span className="text-3xl font-black text-blue-800 leading-tight">{fmt(results.totalCost)}</span></div></div><div className="text-center text-[9px] text-slate-400 mt-2 font-bold uppercase">© {new Date().getFullYear()} HK Car Dealer Tool | Confidential</div></div>
+
+                    {/* Car Details */}
+                    <div className="mb-4">
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
+                        <div className="grid grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">品牌</span> <span className="font-bold text-sm text-black">{details.manufacturer}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">型號</span> <span className="font-bold text-sm text-black">{details.model}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">年份</span> <span className="font-bold text-sm text-black">{details.year}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">代號</span> <span className="font-bold text-sm text-black">{details.code}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
+                            <div className="col-span-4 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
+                        </div>
+                    </div>
+
+                    {/* Report Content Switcher based on type */}
+                    {title === "車輛成本估價單" ? (
+                        <>
+                            {/* Quotation Content */}
+                            <div className="mb-4">
+                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
+                                <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden">
+                                    <thead className="bg-slate-200 text-slate-900">
+                                        <tr>
+                                            <th className="text-left py-1 px-2 font-black border-b-2 border-slate-400">項目</th>
+                                            <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">金額 ({COUNTRIES[country].currency})</th>
+                                            <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400">匯率</th>
+                                            <th className="text-right py-1 px-2 font-black border-b-2 border-slate-400 bg-blue-100">港幣 (HKD)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className='divide-y divide-slate-300'>
+                                        <tr>
+                                            <td className="py-1 px-2 font-bold text-slate-900">當地車價</td>
+                                            <td className="text-right px-2 font-mono font-bold">{fmtLocal(vals.carPrice)}</td>
+                                            <td className="text-right px-2 font-mono font-bold">{vals.rate}</td>
+                                            <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.carPriceHKD)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="py-1 px-2 font-bold text-slate-900">當地雜費 <span className='text-[10px] font-normal text-slate-600 ml-1'>({Object.values(fees.origin).map(f => f.label).join('/')})</span></td>
+                                            <td className="text-right px-2 text-slate-500 font-bold">-</td>
+                                            <td className="text-right px-2 text-slate-500 font-bold">-</td>
+                                            <td className="text-right px-2 font-black text-black bg-blue-50/50">{fmt(results.originTotalHKD)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0">
+                                <div className="border border-slate-300 rounded p-2">
+                                    <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
+                                    <ul className="text-[10px] space-y-0.5">
+                                        {Object.entries(hkMiscFees).map(([k, v]) => (
+                                            <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                        ))}
+                                        <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計</span><span>{fmt(safeHkMiscTotal)}</span></li>
+                                    </ul>
+                                </div>
+                                <div className="border border-slate-300 rounded p-2">
+                                    <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">出牌費用</h4>
+                                    <ul className="text-[10px] space-y-0.5">
+                                        {Object.entries(hkLicenseFees).map(([k, v]) => (
+                                            <li key={k} className="flex justify-between items-center"><span className="text-slate-600 font-bold">{v.label}</span><span className="font-mono text-black">{fmt(v.val)}</span></li>
+                                        ))}
+                                        <li className="flex justify-between items-center bg-orange-50 -mx-1 px-1 rounded border border-orange-100"><span className="text-orange-900 font-bold">首次登記稅 (A1)</span><span className="font-mono font-black text-orange-800">{fmt(results.frt)}</span></li>
+                                        <li className="text-[10px] text-slate-500 text-right -mt-1 mb-1 font-bold">(PRP: ${new Intl.NumberFormat('en-US').format(vals.prp)})</li>
+                                        <li className="flex justify-between items-center font-black border-t border-slate-900 pt-1 mt-1 bg-slate-100 p-1 rounded"><span>小計 (含稅)</span><span>{fmt(safeHkLicenseTotal)}</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            {attachments && attachments.length > 0 && (
+                                <div className="mb-4 flex-grow-0">
+                                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
+                                    <div className="grid grid-cols-5 gap-2">
+                                        {attachments.slice(0, 5).map((file, idx) => (
+                                            <div key={idx} className="border-2 border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden">
+                                                {file.type.startsWith('image/') ? (
+                                                    <img src={file.data} className="w-full h-full object-cover rounded-sm" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                             {/* Footer Totals */}
+                            <div className="mt-auto border-t-4 border-slate-800 pt-3">
+                                <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase">車輛到港成本</span>
+                                        <span className="text-xl font-black text-slate-800 leading-tight">{fmt(results.landedCost)}</span>
+                                    </div>
+                                    <div className="h-8 w-px bg-slate-300 mx-4"></div>
+                                    <div className="flex flex-col text-right">
+                                        <span className="text-[10px] font-bold text-blue-600 uppercase">預計總成本 (Total)</span>
+                                        <span className="text-3xl font-black text-blue-800 leading-tight">{fmt(results.totalCost)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Receipt Content */}
+                            <div className="mb-8 flex-grow">
+                                <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-500">付款紀錄</h3>
+                                <table className="w-full text-sm border-2 border-slate-300">
+                                    <thead className="bg-slate-200">
+                                        <tr>
+                                            <th className="p-3 text-left font-black">日期</th>
+                                            <th className="p-3 text-left font-black">備註</th>
+                                            <th className="p-3 text-right font-black">金額 (HKD)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {payments.map((p, i) => (
+                                            <tr key={i} className="border-b border-slate-200">
+                                                <td className="p-3 font-bold">{p.date}</td>
+                                                <td className="p-3 font-bold">{p.note}</td>
+                                                <td className="p-3 text-right font-mono font-bold">{fmt(p.amount)}</td>
+                                            </tr>
+                                        ))}
+                                        {payments.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-slate-400 italic">暫無付款紀錄</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="flex justify-end mb-12">
+                                <div className="w-1/2 space-y-2">
+                                    <div className="flex justify-between text-slate-600 font-bold"><span>車價總額</span><span>{fmt(results.totalCost)}</span></div>
+                                    <div className="flex justify-between text-green-700 font-bold"><span>已付總額</span><span>{fmt(payments.reduce((acc, p) => acc + (p.amount || 0), 0))}</span></div>
+                                    <div className="flex justify-between text-xl font-black text-slate-900 border-t-4 border-slate-900 pt-2"><span>尚欠餘額</span><span>{fmt(results.totalCost - payments.reduce((acc, p) => acc + (p.amount || 0), 0))}</span></div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-12 mt-auto pt-12 border-t-2 border-slate-200">
+                                <div><div className="h-20 border-b-2 border-slate-400 mb-2"></div><p className="text-center font-bold text-slate-600">金田汽車簽署及蓋印</p></div>
+                                <div><div className="h-20 border-b-2 border-slate-400 mb-2"></div><p className="text-center font-bold text-slate-600">客戶簽署確認</p></div>
+                            </div>
+                        </>
+                    )}
+                    
+                    <div className="text-center text-[9px] text-slate-400 mt-2 font-bold uppercase">
+                         © {new Date().getFullYear()} Gold Land Auto | Official Document
+                    </div>
                 </div>
 
                 <div className="absolute top-4 right-4 flex gap-2 no-print">
@@ -503,10 +558,10 @@ export default function App() {
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
   const [history, setHistory] = useState([]);
   
-  // NEW STATES FOR VIEW
+  // NEW STATES
   const [reportData, setReportData] = useState(null);
-  const [receiptData, setReceiptData] = useState(null);
-  const [paymentModalData, setPaymentModalData] = useState(null); // { item: ... }
+  const [reportTitle, setReportTitle] = useState("車輛成本估價單"); // "車輛成本估價單" or "正式收據 / Official Receipt"
+  const [paymentModalData, setPaymentModalData] = useState(null); 
 
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
@@ -546,7 +601,6 @@ export default function App() {
       const unsub = onSnapshot(ref, (snap) => {
           if (snap.exists()) {
               const d = snap.data();
-              // Auto migration for fees
               let loadedFees = d.fees;
               if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
                    loadedFees = { ...loadedFees, UK: DEFAULT_FEES.UK, OT: DEFAULT_FEES.OT };
@@ -639,9 +693,40 @@ export default function App() {
       } catch(e) { showMsg("付款儲存失敗", "error"); }
   };
   
+  // Defined at TOP LEVEL of App
+  const generateCurrentReport = () => {
+      if(totalCost <= 0) return showMsg("無效的計算數據", "error");
+      const currentData = {
+          details,
+          vals: { carPrice, prp, rate },
+          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees },
+          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost },
+          country,
+          date: new Date().toLocaleString('zh-HK'),
+          attachments
+      };
+      setReportData(currentData);
+      setReportTitle("車輛成本估價單");
+  };
+
+  const handleShowReport = (item) => {
+      setReportData(item);
+      setReportTitle("車輛成本估價單");
+  };
+  
+  const handleShowReceipt = (item) => {
+      setReportData(item);
+      setReportTitle("正式收據 / Official Receipt");
+  };
+
+  const closeReport = () => {
+      // If we were editing, restore calculator values, otherwise just close
+      if (activeTab === 'calculator' && reportData) { loadHistoryItem(reportData); }
+      setReportData(null);
+  };
+  
   // Views Routing
-  if (reportData) return <PrintableReport data={reportData} onClose={() => setReportData(null)} logo={appConfig.logo} />;
-  if (receiptData) return <PrintableReceipt data={receiptData} onClose={() => setReceiptData(null)} logo={appConfig.logo} />;
+  if (reportData) return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} title={reportTitle} />;
 
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
@@ -652,7 +737,6 @@ export default function App() {
       {paymentModalData && <PaymentModal historyItem={paymentModalData.item} onClose={() => setPaymentModalData(null)} onSave={handlePaymentSave} />}
 
       <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-xl print:hidden border-b-4 border-blue-600">
-          {/* Header UI ... (Same as before) */}
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
               <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white">
@@ -688,7 +772,7 @@ export default function App() {
           {/* CALCULATOR TAB */}
           {activeTab === 'calculator' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-                 {/* ... Calculator UI (Same as before) ... */}
+                 {/* ... (Calculator UI code remains exactly as before, no changes needed here) ... */}
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                       <div className="lg:col-span-7 space-y-6">
                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
@@ -764,16 +848,22 @@ export default function App() {
                       </div>
                   </div>
 
-                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl flex flex-col justify-between gap-6 z-10 border border-slate-700 ring-1 ring-white/10">
-                      <div className="flex justify-between w-full border-b border-slate-700 pb-4">
-                          <span className="text-base text-slate-400 font-bold">車輛到港成本 <span className="text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
-                          <span className="text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
+                  <div className="sticky bottom-4 bg-slate-900/95 backdrop-blur-md text-white p-3 sm:p-4 rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col gap-3 z-10 border-t border-slate-700">
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                          <span className="text-xs sm:text-base text-slate-400 font-bold">車輛到港成本 <span className="text-[10px] sm:text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
+                          <span className="text-lg sm:text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
                       </div>
-                      <div className="flex justify-between w-full items-end">
-                          <div><div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">預計總成本 (Total)</div><div className="text-5xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div></div>
-                          <div className="flex gap-3">
-                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-5 h-5"/> 報告</button>
-                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="bg-green-600 hover:bg-green-500 px-6 py-3 rounded-xl font-bold disabled:opacity-50 flex items-center gap-2 shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-5 h-5"/> 記錄</button>
+                      
+                      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-end gap-3">
+                          <div className="text-center sm:text-left">
+                            <div className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-widest mb-0.5">預計總成本 (Total)</div>
+                            <div className="text-3xl sm:text-4xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div>
+                          </div>
+                          
+                          <div className="flex gap-2 w-full sm:w-auto">
+                              {/* 這裡確保 generateCurrentReport 被正確綁定 */}
+                              <button onClick={generateCurrentReport} disabled={totalCost<=0} className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 px-3 sm:px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-4 h-4"/> 報告</button>
+                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="flex-1 sm:flex-none justify-center bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
                           </div>
                       </div>
                   </div>
@@ -801,9 +891,9 @@ export default function App() {
                                       {/* New Payment Button */}
                                       {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
                                       {/* Receipt Button */}
-                                      {(item.payments && item.payments.length > 0) && <button onClick={() => setReceiptData(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
+                                      {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
                                       
-                                      <button onClick={() => setReportData(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
+                                      <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
                                       <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="載入"><ArrowLeft className="w-5 h-5"/></button>
                                       <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
                                       <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
@@ -822,22 +912,31 @@ export default function App() {
               </div>
           )}
 
-          {/* SETTINGS TAB (Same as before) */}
+          {/* SETTINGS TAB */}
           {activeTab === 'settings' && (
               <div className="animate-in fade-in duration-300 space-y-8">
                    {/* Settings content preserved... */}
-                   {/* Inventory handlers etc. */}
                    <Card className="p-6 border-l-8 border-l-blue-600">
                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">當前資料帳號</div>
                        <div className="font-mono text-2xl font-black text-blue-900 bg-blue-50 p-4 rounded-xl border border-blue-100">{dataKey}</div>
                    </Card>
+                   
                    <Card className="p-6 border-l-8 border-indigo-500">
                        <SectionHeader icon={ImageIcon} title="系統 Logo" color="text-indigo-700" />
                        <div className="flex items-center gap-6">
-                           <div className="w-24 h-24 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">{appConfig.logo ? <img src={appConfig.logo} className="w-full h-full object-contain" /> : <span className="text-xs text-slate-400 font-bold">無 Logo</span>}</div>
-                           <div className="flex flex-col gap-3"><label className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-700 cursor-pointer flex items-center gap-2 shadow-md transition transform hover:-translate-y-0.5"><Upload className="w-4 h-4"/> 上傳圖片<input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} /></label>{appConfig.logo && <button onClick={removeLogo} className="text-red-600 text-xs font-bold hover:underline">移除 Logo</button>}</div>
+                           <div className="w-24 h-24 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">
+                               {appConfig.logo ? <img src={appConfig.logo} className="w-full h-full object-contain" /> : <span className="text-xs text-slate-400 font-bold">無 Logo</span>}
+                           </div>
+                           <div className="flex flex-col gap-3">
+                               <label className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-indigo-700 cursor-pointer flex items-center gap-2 shadow-md transition transform hover:-translate-y-0.5">
+                                   <Upload className="w-4 h-4"/> 上傳圖片
+                                   <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                               </label>
+                               {appConfig.logo && <button onClick={removeLogo} className="text-red-600 text-xs font-bold hover:underline">移除 Logo</button>}
+                           </div>
                        </div>
                    </Card>
+
                    <Card className="p-6 border-l-8 border-purple-500">
                        <SectionHeader icon={Settings} title="系統設定" color="text-purple-700" />
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -845,8 +944,7 @@ export default function App() {
                            <InputGroup label="最大附件大小 (KB)" value={appConfig.maxFileSizeKB} onChange={v => setAppConfig(p => ({...p, maxFileSizeKB: v}))} />
                        </div>
                    </Card>
-                   {/* Inventory, Rates, Fees cards preserved below... */}
-                   {/* Just copying one to save space, but ALL logic is preserved */}
+                   
                    <Card className="p-6 border-l-8 border-green-600">
                        <SectionHeader icon={Car} title="車輛庫存管理" color="text-green-700" />
                        <div className="flex gap-3 mb-6"><input value={newManufacturer} onChange={e => setNewManufacturer(e.target.value)} placeholder="新增品牌 (e.g. Porsche)" className="flex-1 text-sm p-3 border-2 border-slate-300 rounded-xl font-bold focus:border-green-500 focus:ring-0 placeholder:text-slate-400" /><button onClick={addMfr} disabled={!newManufacturer} className="bg-green-600 text-white px-6 rounded-xl text-sm font-bold shadow hover:bg-green-700 disabled:opacity-50 transition transform hover:-translate-y-0.5">新增</button></div>
