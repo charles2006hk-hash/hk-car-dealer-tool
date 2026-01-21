@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature } from 'lucide-react';
 
-// --- Firebase Imports ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// --- Firebase Imports (Fixed for Environment) ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from 'firebase/auth';
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 
 // --- 1. Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
@@ -655,6 +655,62 @@ export default function App() {
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
   const handleLogoUpload = async (e) => { const file = e.target.files[0]; if(!file) return; try { const base64 = await fileToBase64(file); setAppConfig(prev => ({ ...prev, logo: base64 })); saveConfig({ appConfig: { ...appConfig, logo: base64 } }); showMsg("Logo 更新"); } catch(e) {} };
   const removeLogo = () => { setAppConfig(prev => ({ ...prev, logo: null })); saveConfig({ appConfig: { ...appConfig, logo: null } }); };
+
+  // --- MISSING FUNCTIONS ADDED HERE ---
+  const addMfr = () => {
+      if (!newManufacturer || inventory[newManufacturer]) return;
+      setInventory(prev => ({ ...prev, [newManufacturer]: { models: [] } }));
+      setNewManufacturer('');
+      showMsg(`已新增 ${newManufacturer}`);
+  };
+
+  const deleteMfr = (mfr) => {
+      setModal({
+          title: "刪除品牌",
+          message: `確定刪除 ${mfr} 及其所有型號？`,
+          type: "danger",
+          onConfirm: () => {
+              const newInv = { ...inventory };
+              delete newInv[mfr];
+              setInventory(newInv);
+              setModal(null);
+              showMsg(`已刪除 ${mfr}`);
+          }
+      });
+  };
+
+  const addModel = (mfr) => {
+      if (!newModel.id) return;
+      const currentModels = inventory[mfr]?.models || [];
+      if (currentModels.find(m => m.id === newModel.id)) return showMsg("型號已存在", "error");
+      
+      const modelData = {
+          id: newModel.id,
+          years: newModel.years.split(',').map(s => s.trim()).filter(Boolean),
+          codes: newModel.codes.split(',').map(s => s.trim()).filter(Boolean)
+      };
+      
+      setInventory(prev => ({
+          ...prev,
+          [mfr]: {
+              ...prev[mfr],
+              models: [...currentModels, modelData]
+          }
+      }));
+      setNewModel({ id: '', years: '', codes: '' });
+      showMsg(`已新增 ${modelData.id}`);
+  };
+
+  const deleteModel = (mfr, modelId) => {
+      setInventory(prev => ({
+          ...prev,
+          [mfr]: {
+              ...prev[mfr],
+              models: prev[mfr].models.filter(m => m.id !== modelId)
+          }
+      }));
+  };
+  // ------------------------------------
 
   // Calculations
   const rate = rates[country] || 0;
