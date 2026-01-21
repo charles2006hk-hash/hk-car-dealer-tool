@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -248,48 +248,121 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [note, setNote] = useState('');
-
-    const handleSave = () => {
-        if (!amount || isNaN(parseFloat(amount))) return alert('請輸入有效金額');
-        onSave({ amount: parseFloat(amount), date, note, createdAt: Date.now() });
-        onClose();
-    };
+    
+    // 新增：追蹤正在編輯哪一筆 (index)，如果是 null 代表是新增模式
+    const [editingIndex, setEditingIndex] = useState(null);
 
     const existingPayments = historyItem.payments || [];
     const totalPaid = existingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const balance = historyItem.results.totalCost - totalPaid;
 
+    // 載入要編輯的資料
+    const startEdit = (index) => {
+        const p = existingPayments[index];
+        setAmount(p.amount);
+        setDate(p.date);
+        setNote(p.note || '');
+        setEditingIndex(index);
+    };
+
+    // 取消編輯，重置表單
+    const cancelEdit = () => {
+        setAmount('');
+        setDate(new Date().toISOString().split('T')[0]);
+        setNote('');
+        setEditingIndex(null);
+    };
+
+    // 處理儲存 (新增 或 更新)
+    const handleSave = () => {
+        if (!amount || isNaN(parseFloat(amount))) return alert('請輸入有效金額');
+        
+        const paymentData = { amount: parseFloat(amount), date, note, createdAt: Date.now() };
+        let newPaymentList;
+
+        if (editingIndex !== null) {
+            // 更新模式：替換指定 index 的資料
+            newPaymentList = [...existingPayments];
+            newPaymentList[editingIndex] = paymentData;
+        } else {
+            // 新增模式：加入到陣列
+            newPaymentList = [...existingPayments, paymentData];
+        }
+
+        // 將整個新列表傳回給 App
+        onSave(newPaymentList);
+        cancelEdit(); // 重置
+    };
+
+    // 處理刪除
+    const handleDelete = (index) => {
+        if (!window.confirm("確定要刪除這筆付款紀錄嗎？")) return;
+        const newPaymentList = existingPayments.filter((_, i) => i !== index);
+        onSave(newPaymentList);
+    };
+
     return (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
              <Card className="max-w-md w-full animate-in zoom-in-95 shadow-2xl border-0 ring-1 ring-white/20">
                 <div className="p-5 border-b-2 border-slate-200 bg-slate-50 flex justify-between items-center">
-                    <h3 className="font-black flex gap-2 items-center text-xl text-slate-800"><CreditCard className="w-6 h-6 text-green-600"/> 付款管理</h3>
+                    <h3 className="font-black flex gap-2 items-center text-xl text-slate-800">
+                        <CreditCard className="w-6 h-6 text-green-600"/> 付款管理
+                    </h3>
                     <button onClick={onClose}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
                 </div>
                 <div className="p-6 space-y-4">
+                    {/* 財務摘要 */}
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <div className="flex justify-between mb-1"><span className="text-slate-500 font-bold">總金額</span><span className="font-black text-slate-800">${new Intl.NumberFormat().format(historyItem.results.totalCost)}</span></div>
                         <div className="flex justify-between mb-1"><span className="text-green-600 font-bold">已付總額</span><span className="font-black text-green-600">${new Intl.NumberFormat().format(totalPaid)}</span></div>
                         <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="text-red-600 font-bold text-lg">尚欠餘額</span><span className="font-black text-red-600 text-lg">${new Intl.NumberFormat().format(balance)}</span></div>
                     </div>
-                    <div className="space-y-3 pt-2">
-                        <h4 className="font-bold text-slate-700 text-sm uppercase">新增付款</h4>
+
+                    {/* 輸入表單 */}
+                    <div className={`space-y-3 pt-2 border-t-2 ${editingIndex !== null ? 'border-orange-200 bg-orange-50/50 -mx-6 px-6 py-4' : 'border-slate-100'}`}>
+                        <div className="flex justify-between items-center">
+                            <h4 className={`font-bold text-sm uppercase ${editingIndex !== null ? 'text-orange-600' : 'text-slate-700'}`}>
+                                {editingIndex !== null ? '編輯付款' : '新增付款'}
+                            </h4>
+                            {editingIndex !== null && (
+                                <button onClick={cancelEdit} className="text-xs text-slate-500 underline hover:text-slate-800">取消編輯</button>
+                            )}
+                        </div>
                         <div className="grid grid-cols-2 gap-3">
                              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
                              <input type="number" placeholder="金額" value={amount} onChange={e => setAmount(e.target.value)} className="p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
                         </div>
                         <input type="text" placeholder="備註 (e.g. 訂金)" value={note} onChange={e => setNote(e.target.value)} className="w-full p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
-                        <button onClick={handleSave} className="w-full bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700 shadow-md">確認付款</button>
+                        
+                        <button onClick={handleSave} className={`w-full text-white py-2 rounded-lg font-bold shadow-md transition ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}>
+                            {editingIndex !== null ? '更新紀錄' : '確認付款'}
+                        </button>
                     </div>
+
+                    {/* 列表區域 */}
                     {existingPayments.length > 0 && (
                         <div className="mt-4">
                             <h4 className="font-bold text-slate-700 text-sm uppercase mb-2">付款紀錄</h4>
-                            <div className="max-h-32 overflow-y-auto space-y-2 border rounded-lg p-2 bg-slate-50">
+                            <div className="max-h-48 overflow-y-auto space-y-2 border rounded-lg p-2 bg-slate-50">
                                 {existingPayments.map((p, idx) => (
-                                    <div key={idx} className="flex justify-between text-xs font-bold border-b last:border-0 pb-1 mb-1 border-slate-200">
-                                        <span className="text-slate-500">{p.date}</span>
-                                        <span className="text-slate-700">{p.note || '-'}</span>
-                                        <span className="text-green-600">${new Intl.NumberFormat().format(p.amount)}</span>
+                                    <div key={idx} className={`flex justify-between items-center text-xs font-bold border-b last:border-0 pb-2 mb-2 border-slate-200 ${editingIndex === idx ? 'bg-orange-100 p-2 rounded border-0' : ''}`}>
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="text-slate-500">{p.date}</span>
+                                            <span className="text-slate-700">{p.note || '-'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-green-600 text-sm">${new Intl.NumberFormat().format(p.amount)}</span>
+                                            
+                                            {/* 操作按鈕 */}
+                                            <div className="flex gap-1">
+                                                <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded transition" title="編輯">
+                                                    <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => handleDelete(idx)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="刪除">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -637,6 +710,26 @@ export default function App() {
       }
   }, [details.engineCapacity]);
 
+// --- 新增功能：將系統 Logo 同步到瀏覽器標籤頁 (Favicon) ---
+  useEffect(() => {
+      // 嘗試選取現有的 favicon 元素
+      let link = document.querySelector("link[rel~='icon']");
+      
+      // 如果沒有，則建立一個新的
+      if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+      }
+
+      // 如果有設定 Logo，就更新 favicon；否則使用預設圖示或保持原樣
+      if (appConfig.logo) {
+          link.href = appConfig.logo;
+      } 
+      // 這裡可以選擇是否在沒有 Logo 時恢復預設，例如：
+      // else { link.href = '/favicon.ico'; }
+  }, [appConfig.logo]);
+
   // Handlers
   const handleKeyChange = () => { if (tempKey.trim()) { const newKey = tempKey.trim(); setDataKey(newKey); try { localStorage.setItem('hk_car_dealer_key', newKey); } catch (e) {} setIsKeyEditing(false); showMsg(`已切換至: ${newKey}`); } };
   const handleFileUpload = async (e) => {
@@ -729,15 +822,21 @@ export default function App() {
   const loadHistoryItem = (item) => { setCountry(item.country); setCarPrice(item.vals.carPrice); setPrp(item.vals.prp); setDetails(item.details); setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license); setAttachments(item.attachments || []); setActiveTab('calculator'); showMsg("已載入"); };
 
   // Payment Logic
-  const handlePaymentSave = async (payment) => {
+  const handlePaymentSave = async (newPaymentsList) => {
       if (!paymentModalData || !db) return;
       const item = paymentModalData.item;
-      const currentPayments = item.payments || [];
-      const newPayments = [...currentPayments, payment];
+      
       try {
-          await updateDoc(doc(getHistoryRef(), item.id), { payments: newPayments });
-          showMsg("付款已記錄");
-      } catch(e) { showMsg("付款儲存失敗", "error"); }
+          await updateDoc(doc(getHistoryRef(), item.id), { payments: newPaymentsList });
+          
+          // 更新本地 modal 資料，確保畫面不會跳掉或顯示舊數據
+          setPaymentModalData(prev => ({ ...prev, item: { ...prev.item, payments: newPaymentsList } }));
+          
+          showMsg("付款紀錄已更新");
+      } catch(e) { 
+          console.error(e);
+          showMsg("付款儲存失敗", "error"); 
+      }
   };
   
   // Defined at TOP LEVEL of App
