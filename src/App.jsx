@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+// 請找到這行，並確保加入了 Pencil
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -710,24 +711,27 @@ export default function App() {
       }
   }, [details.engineCapacity]);
 
-// --- 新增功能：將系統 Logo 同步到瀏覽器標籤頁 (Favicon) ---
+// --- 修正版：將系統 Logo 同步到瀏覽器標籤頁 (防止 404) ---
   useEffect(() => {
-      // 嘗試選取現有的 favicon 元素
+      // 1. 嘗試找到現有的 favicon 標籤
       let link = document.querySelector("link[rel~='icon']");
       
-      // 如果沒有，則建立一個新的
+      // 2. 如果沒有，就建立一個
       if (!link) {
           link = document.createElement('link');
           link.rel = 'icon';
           document.head.appendChild(link);
       }
 
-      // 如果有設定 Logo，就更新 favicon；否則使用預設圖示或保持原樣
+      // 3. 設定圖示
       if (appConfig.logo) {
+          // 如果有上傳 Logo，使用上傳的圖片
           link.href = appConfig.logo;
-      } 
-      // 這裡可以選擇是否在沒有 Logo 時恢復預設，例如：
-      // else { link.href = '/favicon.ico'; }
+      } else {
+          // 如果沒有 Logo，使用一個透明圖片或預設值，避免 404
+          // 這裡使用一個空白的 Base64 圖片作為預設，防止瀏覽器報錯
+          link.href = 'data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVQI12NgATMg38GAA8Zh6wQWiQAyMwEASUkEFTUAAAAASUVORK5CYII=';
+      }
   }, [appConfig.logo]);
 
   // Handlers
