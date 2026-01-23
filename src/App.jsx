@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-// 請找到這行，並確保加入了 Pencil
 import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -22,7 +21,8 @@ const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
-const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 2000, logo: null }; 
+// MODIFIED: Updated maxFileSizeKB to 5000 (5MB)
+const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 5000, logo: null }; 
 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
@@ -119,7 +119,7 @@ const getLicenseFeeByCC = (cc) => {
 };
 
 // --- IMAGE COMPRESSION HELPER ---
-const compressImage = (file, maxWidth = 800, quality = 0.6) => {
+const compressImage = (file, maxWidth = 1024, quality = 0.5) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -131,6 +131,7 @@ const compressImage = (file, maxWidth = 800, quality = 0.6) => {
         const scaleSize = maxWidth / img.width;
         let width = img.width;
         let height = img.height;
+        // Only scale down if the image is wider than maxWidth
         if (width > maxWidth) {
             width = maxWidth;
             height = img.height * scaleSize;
@@ -635,7 +636,9 @@ export default function App() {
   // NEW STATES
   const [reportData, setReportData] = useState(null);
   const [reportTitle, setReportTitle] = useState("車輛成本估價單"); // "車輛成本估價單" or "正式收據 / Official Receipt"
-  const [paymentModalData, setPaymentModalData] = useState(null); 
+  const [paymentModalData, setPaymentModalData] = useState(null);
+  // NEW STATE FOR HOVER
+  const [hoveredFile, setHoveredFile] = useState(null);
 
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
@@ -736,17 +739,36 @@ export default function App() {
 
   // Handlers
   const handleKeyChange = () => { if (tempKey.trim()) { const newKey = tempKey.trim(); setDataKey(newKey); try { localStorage.setItem('hk_car_dealer_key', newKey); } catch (e) {} setIsKeyEditing(false); showMsg(`已切換至: ${newKey}`); } };
+  
   const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files); const currentCount = attachments.length; const maxFiles = appConfig.maxFiles || 5; const maxSizeKB = appConfig.maxFileSizeKB || 500;
+    const files = Array.from(e.target.files); 
+    const currentCount = attachments.length; 
+    const maxFiles = appConfig.maxFiles || 5; 
+    const maxSizeKB = appConfig.maxFileSizeKB || 5000; // Default to 5MB if config missing
+
     if (currentCount + files.length > maxFiles) return showMsg(`最多 ${maxFiles} 個文件`, 'error');
+    
     const newAttachments = [];
     for (const file of files) {
         if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 過大`, 'error'); continue; }
-        try { const base64 = await compressImage(file, 800, 0.7); newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 }); } catch (error) { console.error(error); }
+        
+        try { 
+            let base64;
+            // Only compress images. MODIFIED: Compression target ~120KB (Width 1024, Q 0.5)
+            if (file.type.startsWith('image/')) {
+                base64 = await compressImage(file, 1024, 0.5); 
+            } else {
+                base64 = await fileToBase64(file);
+            }
+            newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 }); 
+        } catch (error) { 
+            console.error(error); 
+        }
     }
     if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
     e.target.value = null; 
   };
+
   const removeAttachment = (index) => setAttachments(prev => prev.filter((_, i) => i !== index));
   const handleRateChange = (cid, val) => setRates(p => ({...p, [cid]: val}));
   const handleFeeChange = (cid, category, key, val) => { setFees(prev => ({ ...prev, [cid]: { ...prev[cid], [category]: { ...prev[cid][category], [key]: { ...prev[cid][category][key], val } } } })); };
@@ -971,17 +993,60 @@ export default function App() {
                                   {attachments.length > 0 && (
                                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                                           {attachments.map((file, idx) => (
-                                              <div key={idx} className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer overflow-hidden" onClick={() => file.type.startsWith('image/') && setPreviewImage(file)}>
-                                                  <div className="flex items-center gap-3">
-                                                      {file.type.startsWith('image/') ? <img src={file.data} className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200" /> : <div className="w-12 h-12 flex items-center justify-center bg-slate-100 rounded-lg text-slate-400"><FileText className="w-8 h-8"/></div>}
+                                              <div 
+                                                key={idx} 
+                                                className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer"
+                                                onClick={() => file.type.startsWith('image/') && setPreviewImage(file)}
+                                              >
+                                                  {/* Image Container with Hover State */}
+                                                  <div 
+                                                    className="flex items-center gap-3"
+                                                    onMouseEnter={() => setHoveredFile(idx)}
+                                                    onMouseLeave={() => setHoveredFile(null)}
+                                                  >
+                                                      {file.type.startsWith('image/') ? (
+                                                          <>
+                                                              <img src={file.data} className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200" />
+                                                              {/* Hover Zoom Popover */}
+                                                              {hoveredFile === idx && (
+                                                                  <div className="fixed z-[999] pointer-events-none" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                      <img src={file.data} className="max-w-[80vw] max-h-[80vh] object-contain shadow-2xl rounded-lg border-4 border-white bg-white" />
+                                                                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">
+                                                                          預覽模式
+                                                                      </div>
+                                                                  </div>
+                                                              )}
+                                                          </>
+                                                      ) : (
+                                                          <div className="w-12 h-12 flex items-center justify-center bg-slate-100 rounded-lg text-slate-400"><FileText className="w-8 h-8"/></div>
+                                                      )}
                                                       <div className="flex-1 min-w-0">
                                                           <div className="truncate text-xs font-bold text-slate-700">{file.name}</div>
                                                           <div className="text-[10px] text-slate-400 font-bold">{(file.size/1024).toFixed(0)}KB</div>
                                                       </div>
                                                   </div>
-                                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                                                      <button className="text-white hover:text-blue-200"><Eye className="w-6 h-6"/></button>
-                                                      <button onClick={(e) => {e.stopPropagation(); removeAttachment(idx)}} className="text-white hover:text-red-400"><Trash2 className="w-6 h-6"/></button>
+                                                  
+                                                  {/* Overlay Actions */}
+                                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3 rounded-xl">
+                                                      <button className="text-white hover:text-blue-200" title="預覽"><Eye className="w-5 h-5"/></button>
+                                                      {file.type.startsWith('image/') && (
+                                                          <a 
+                                                            href={file.data} 
+                                                            download={file.name} 
+                                                            className="text-white hover:text-green-300" 
+                                                            onClick={(e) => e.stopPropagation()} 
+                                                            title="下載"
+                                                          >
+                                                              <Download className="w-5 h-5"/>
+                                                          </a>
+                                                      )}
+                                                      <button 
+                                                        onClick={(e) => {e.stopPropagation(); removeAttachment(idx)}} 
+                                                        className="text-white hover:text-red-400" 
+                                                        title="刪除"
+                                                      >
+                                                          <Trash2 className="w-5 h-5"/>
+                                                      </button>
                                                   </div>
                                               </div>
                                           ))}
