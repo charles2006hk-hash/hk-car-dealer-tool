@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -21,8 +21,13 @@ const APP_ID_PATH = 'hk-car-dealer-app';
 
 // --- Constants & Defaults ---
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
-// MODIFIED: Updated maxFileSizeKB to 5000 (5MB)
 const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 5000, logo: null }; 
+
+// 新增：預設選項 (顏色)
+const DEFAULT_OPTIONS = {
+    exteriorColors: ['White', 'Black', 'Silver', 'Grey', 'Pearl', 'Blue', 'Red', 'Beige', 'Green', 'Yellow'],
+    interiorColors: ['Black', 'Beige', 'Grey', 'Red', 'Brown', 'Tan', 'White']
+};
 
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
@@ -131,7 +136,6 @@ const compressImage = (file, maxWidth = 1024, quality = 0.5) => {
         const scaleSize = maxWidth / img.width;
         let width = img.width;
         let height = img.height;
-        // Only scale down if the image is wider than maxWidth
         if (width > maxWidth) {
             width = maxWidth;
             height = img.height * scaleSize;
@@ -211,6 +215,34 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   );
 };
 
+// 新增：簡易列表管理組件 (用於設定顏色)
+const SimpleListManager = ({ title, items, onAdd, onDelete }) => {
+    const [newItem, setNewItem] = useState('');
+    return (
+        <div className="border-2 border-slate-200 rounded-xl bg-slate-50 p-4">
+            <h4 className="font-bold text-slate-700 mb-3 text-sm uppercase">{title}</h4>
+            <div className="flex gap-2 mb-3">
+                <input 
+                    value={newItem} 
+                    onChange={e => setNewItem(e.target.value)} 
+                    placeholder="輸入新選項..." 
+                    className="flex-1 text-xs p-2 border-2 border-slate-300 rounded-lg font-bold"
+                    onKeyDown={e => e.key === 'Enter' && newItem && (onAdd(newItem), setNewItem(''))}
+                />
+                <button onClick={() => {if(newItem) { onAdd(newItem); setNewItem(''); }}} className="bg-blue-600 text-white px-3 py-1 rounded-lg font-bold text-xs shadow hover:bg-blue-700">新增</button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {items.map((item, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 bg-white border border-slate-300 px-2 py-1 rounded-md text-xs font-bold text-slate-700 shadow-sm">
+                        {item}
+                        <X className="w-3 h-3 text-slate-400 hover:text-red-500 cursor-pointer" onClick={() => onDelete(item)}/>
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const ConfirmationModal = ({ config, onClose }) => {
     if (!config) return null;
     const { title, message, onConfirm, type } = config;
@@ -250,15 +282,12 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [note, setNote] = useState('');
-    
-    // 新增：追蹤正在編輯哪一筆 (index)，如果是 null 代表是新增模式
     const [editingIndex, setEditingIndex] = useState(null);
 
     const existingPayments = historyItem.payments || [];
     const totalPaid = existingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const balance = historyItem.results.totalCost - totalPaid;
 
-    // 載入要編輯的資料
     const startEdit = (index) => {
         const p = existingPayments[index];
         setAmount(p.amount);
@@ -267,7 +296,6 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
         setEditingIndex(index);
     };
 
-    // 取消編輯，重置表單
     const cancelEdit = () => {
         setAmount('');
         setDate(new Date().toISOString().split('T')[0]);
@@ -275,28 +303,20 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
         setEditingIndex(null);
     };
 
-    // 處理儲存 (新增 或 更新)
     const handleSave = () => {
         if (!amount || isNaN(parseFloat(amount))) return alert('請輸入有效金額');
-        
         const paymentData = { amount: parseFloat(amount), date, note, createdAt: Date.now() };
         let newPaymentList;
-
         if (editingIndex !== null) {
-            // 更新模式：替換指定 index 的資料
             newPaymentList = [...existingPayments];
             newPaymentList[editingIndex] = paymentData;
         } else {
-            // 新增模式：加入到陣列
             newPaymentList = [...existingPayments, paymentData];
         }
-
-        // 將整個新列表傳回給 App
         onSave(newPaymentList);
-        cancelEdit(); // 重置
+        cancelEdit(); 
     };
 
-    // 處理刪除
     const handleDelete = (index) => {
         if (!window.confirm("確定要刪除這筆付款紀錄嗎？")) return;
         const newPaymentList = existingPayments.filter((_, i) => i !== index);
@@ -313,35 +333,27 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
                     <button onClick={onClose}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
                 </div>
                 <div className="p-6 space-y-4">
-                    {/* 財務摘要 */}
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <div className="flex justify-between mb-1"><span className="text-slate-500 font-bold">總金額</span><span className="font-black text-slate-800">${new Intl.NumberFormat().format(historyItem.results.totalCost)}</span></div>
                         <div className="flex justify-between mb-1"><span className="text-green-600 font-bold">已付總額</span><span className="font-black text-green-600">${new Intl.NumberFormat().format(totalPaid)}</span></div>
                         <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="text-red-600 font-bold text-lg">尚欠餘額</span><span className="font-black text-red-600 text-lg">${new Intl.NumberFormat().format(balance)}</span></div>
                     </div>
-
-                    {/* 輸入表單 */}
                     <div className={`space-y-3 pt-2 border-t-2 ${editingIndex !== null ? 'border-orange-200 bg-orange-50/50 -mx-6 px-6 py-4' : 'border-slate-100'}`}>
                         <div className="flex justify-between items-center">
                             <h4 className={`font-bold text-sm uppercase ${editingIndex !== null ? 'text-orange-600' : 'text-slate-700'}`}>
                                 {editingIndex !== null ? '編輯付款' : '新增付款'}
                             </h4>
-                            {editingIndex !== null && (
-                                <button onClick={cancelEdit} className="text-xs text-slate-500 underline hover:text-slate-800">取消編輯</button>
-                            )}
+                            {editingIndex !== null && <button onClick={cancelEdit} className="text-xs text-slate-500 underline hover:text-slate-800">取消編輯</button>}
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
                              <input type="number" placeholder="金額" value={amount} onChange={e => setAmount(e.target.value)} className="p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
                         </div>
                         <input type="text" placeholder="備註 (e.g. 訂金)" value={note} onChange={e => setNote(e.target.value)} className="w-full p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
-                        
                         <button onClick={handleSave} className={`w-full text-white py-2 rounded-lg font-bold shadow-md transition ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}>
                             {editingIndex !== null ? '更新紀錄' : '確認付款'}
                         </button>
                     </div>
-
-                    {/* 列表區域 */}
                     {existingPayments.length > 0 && (
                         <div className="mt-4">
                             <h4 className="font-bold text-slate-700 text-sm uppercase mb-2">付款紀錄</h4>
@@ -354,15 +366,9 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className="text-green-600 text-sm">${new Intl.NumberFormat().format(p.amount)}</span>
-                                            
-                                            {/* 操作按鈕 */}
                                             <div className="flex gap-1">
-                                                <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded transition" title="編輯">
-                                                    <Pencil className="w-4 h-4" />
-                                                </button>
-                                                <button onClick={() => handleDelete(idx)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="刪除">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                <button onClick={() => startEdit(idx)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded transition" title="編輯"><Pencil className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDelete(idx)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="刪除"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </div>
                                     </div>
@@ -386,7 +392,6 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
         return `${symbol}${val}`;
     };
 
-    // Use Iframe for printing to solve blank page issues
     const handlePrint = () => {
         const content = document.getElementById('printable-report-content').innerHTML;
         const iframe = document.createElement('iframe');
@@ -419,12 +424,7 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                 </div>
             </body>
             <script>
-                // Wait for styles and images to load
-                window.onload = () => {
-                    setTimeout(() => {
-                        window.print();
-                    }, 800);
-                };
+                window.onload = () => { setTimeout(() => { window.print(); }, 800); };
             </script>
             </html>
         `);
@@ -440,23 +440,15 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
     return (
         <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-md flex justify-center overflow-auto p-4 md:p-8">
             <div className="relative w-full max-w-[210mm] min-h-[297mm] my-8 bg-white shadow-2xl origin-top transform transition-transform scale-100">
-                
-                {/* This content is cloned into the iframe */}
                 <div id="printable-report-content" className="p-10 text-slate-900 h-full flex flex-col font-sans min-h-[297mm] bg-white">
-                    {/* Header */}
                     <div className="flex justify-between items-end border-b-4 border-slate-900 pb-3 mb-4">
                         <div><h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">{title}</h1><p className="text-sm text-slate-700 font-bold">日期: {date}</p></div>
                         <div className="text-right">
-                             {logo ? (
-                                <img src={logo} alt="Company Logo" className="h-20 object-contain mb-1 ml-auto" />
-                            ) : (
-                                <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>
-                            )}
+                             {logo ? <img src={logo} alt="Company Logo" className="h-20 object-contain mb-1 ml-auto" /> : <h2 className="text-xl font-black text-blue-900 flex items-center justify-end gap-2">HK Car Dealer</h2>}
                             <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Internal Use Only</p>
                         </div>
                     </div>
 
-                    {/* Car Details */}
                     <div className="mb-4">
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">車輛資料</h3>
                         <div className="grid grid-cols-4 gap-y-2 gap-x-4 text-xs bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
@@ -466,16 +458,15 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">代號</span> <span className="font-bold text-sm text-black">{details.code}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">排氣量</span> <span className="font-bold text-black">{details.engineCapacity ? `${details.engineCapacity} cc` : '-'}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">座位</span> <span className="font-bold text-black">{details.seats || '-'}</span></div>
+                            <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">波箱</span> <span className="font-bold text-black">{details.transmission || '-'}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">外觀顏色</span> <span className="font-bold text-black">{details.exteriorColor || '-'}</span></div>
                             <div><span className="text-slate-600 block text-[10px] font-bold uppercase mb-0.5">內飾顏色</span> <span className="font-bold text-black">{details.interiorColor || '-'}</span></div>
-                            <div className="col-span-4 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
+                            <div className="col-span-3 border-t-2 border-slate-300 pt-2 mt-1 flex items-center gap-2"><span className="text-slate-600 text-[10px] font-bold uppercase">車身號碼:</span> <span className="font-mono font-black text-sm text-black">{details.chassisNo || '-'}</span></div>
                         </div>
                     </div>
 
-                    {/* Report Content Switcher based on type */}
                     {title === "車輛成本估價單" ? (
                         <>
-                            {/* Quotation Content */}
                             <div className="mb-4">
                                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider mb-2 border-l-4 border-blue-700 pl-2">核心成本</h3>
                                 <table className="w-full text-xs border-2 border-slate-300 rounded-lg overflow-hidden">
@@ -503,7 +494,6 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                                     </tbody>
                                 </table>
                             </div>
-
                             <div className="grid grid-cols-2 gap-6 mb-4 flex-grow-0">
                                 <div className="border border-slate-300 rounded p-2">
                                     <h4 className="font-black text-slate-900 border-b border-slate-300 pb-1 mb-1 text-[10px] uppercase">香港雜費</h4>
@@ -526,25 +516,18 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                                     </ul>
                                 </div>
                             </div>
-                            
                             {attachments && attachments.length > 0 && (
                                 <div className="mb-4 flex-grow-0">
                                     <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">附件</h3>
                                     <div className="grid grid-cols-5 gap-2">
                                         {attachments.slice(0, 5).map((file, idx) => (
                                             <div key={idx} className="border-2 border-slate-200 rounded p-1 flex flex-col items-center bg-slate-50 h-20 overflow-hidden">
-                                                {file.type.startsWith('image/') ? (
-                                                    <img src={file.data} className="w-full h-full object-cover rounded-sm" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>
-                                                )}
+                                                {file.type.startsWith('image/') ? <img src={file.data} className="w-full h-full object-cover rounded-sm" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><FileText className="w-6 h-6" /></div>}
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             )}
-
-                             {/* Footer Totals */}
                             <div className="mt-auto border-t-4 border-slate-800 pt-3">
                                 <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300">
                                     <div className="flex flex-col">
@@ -561,7 +544,6 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                         </>
                     ) : (
                         <>
-                            {/* Receipt Content */}
                             <div className="mb-8 flex-grow">
                                 <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-500">付款紀錄</h3>
                                 <table className="w-full text-sm border-2 border-slate-300">
@@ -584,7 +566,6 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                                     </tbody>
                                 </table>
                             </div>
-
                             <div className="flex justify-end mb-12">
                                 <div className="w-1/2 space-y-2">
                                     <div className="flex justify-between text-slate-600 font-bold"><span>車價總額</span><span>{fmt(results.totalCost)}</span></div>
@@ -592,19 +573,16 @@ const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" 
                                     <div className="flex justify-between text-xl font-black text-slate-900 border-t-4 border-slate-900 pt-2"><span>尚欠餘額</span><span>{fmt(results.totalCost - payments.reduce((acc, p) => acc + (p.amount || 0), 0))}</span></div>
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-2 gap-12 mt-auto pt-12 border-t-2 border-slate-200">
                                 <div><div className="h-20 border-b-2 border-slate-400 mb-2"></div><p className="text-center font-bold text-slate-600">金田汽車簽署及蓋印</p></div>
                                 <div><div className="h-20 border-b-2 border-slate-400 mb-2"></div><p className="text-center font-bold text-slate-600">客戶簽署確認</p></div>
                             </div>
                         </>
                     )}
-                    
                     <div className="text-center text-[9px] text-slate-400 mt-2 font-bold uppercase">
                          © {new Date().getFullYear()} Gold Land Auto | Official Document
                     </div>
                 </div>
-
                 <div className="absolute top-4 right-4 flex gap-2 no-print">
                      <button onClick={handlePrint} className="bg-blue-700 text-white px-5 py-2 rounded-full shadow-xl hover:bg-blue-800 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95 border-2 border-blue-900"><Printer className="w-5 h-5" /> 列印 / PDF</button>
                      <button onClick={onClose} className="bg-white text-slate-900 border-2 border-slate-400 px-5 py-2 rounded-full shadow-xl hover:bg-slate-100 flex items-center gap-2 font-bold transition transform hover:scale-105 active:scale-95"><ArrowLeft className="w-5 h-5" /> 返回計算器</button>
@@ -634,10 +612,10 @@ export default function App() {
   const [history, setHistory] = useState([]);
   
   // NEW STATES
+  const [sysOptions, setSysOptions] = useState(DEFAULT_OPTIONS); // 顏色選項狀態
   const [reportData, setReportData] = useState(null);
-  const [reportTitle, setReportTitle] = useState("車輛成本估價單"); // "車輛成本估價單" or "正式收據 / Official Receipt"
+  const [reportTitle, setReportTitle] = useState("車輛成本估價單");
   const [paymentModalData, setPaymentModalData] = useState(null);
-  // NEW STATE FOR HOVER
   const [hoveredFile, setHoveredFile] = useState(null);
 
   const [carPrice, setCarPrice] = useState('');
@@ -645,7 +623,7 @@ export default function App() {
   const [currOriginFees, setCurrOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', engineCapacity: '', exteriorColor: '', interiorColor: '' });
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '' });
   const [attachments, setAttachments] = useState([]);
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingMfr, setEditingMfr] = useState(null);
@@ -687,7 +665,10 @@ export default function App() {
               setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
-          } else { setDoc(ref, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY, appConfig: DEFAULT_CONFIG }, { merge: true }); }
+              if(d.sysOptions) setSysOptions(d.sysOptions); // 同步選項
+          } else { 
+              setDoc(ref, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY, appConfig: DEFAULT_CONFIG, sysOptions: DEFAULT_OPTIONS }, { merge: true }); 
+          }
       });
       return () => unsub();
   }, [db, dataKey, getSettingsRef]);
@@ -714,27 +695,10 @@ export default function App() {
       }
   }, [details.engineCapacity]);
 
-// --- 修正版：將系統 Logo 同步到瀏覽器標籤頁 (防止 404) ---
   useEffect(() => {
-      // 1. 嘗試找到現有的 favicon 標籤
       let link = document.querySelector("link[rel~='icon']");
-      
-      // 2. 如果沒有，就建立一個
-      if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          document.head.appendChild(link);
-      }
-
-      // 3. 設定圖示
-      if (appConfig.logo) {
-          // 如果有上傳 Logo，使用上傳的圖片
-          link.href = appConfig.logo;
-      } else {
-          // 如果沒有 Logo，使用一個透明圖片或預設值，避免 404
-          // 這裡使用一個空白的 Base64 圖片作為預設，防止瀏覽器報錯
-          link.href = 'data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVQI12NgATMg38GAA8Zh6wQWiQAyMwEASUkEFTUAAAAASUVORK5CYII=';
-      }
+      if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+      if (appConfig.logo) { link.href = appConfig.logo; } else { link.href = 'data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVQI12NgATMg38GAA8Zh6wQWiQAyMwEASUkEFTUAAAAASUVORK5CYII='; }
   }, [appConfig.logo]);
 
   // Handlers
@@ -744,26 +708,22 @@ export default function App() {
     const files = Array.from(e.target.files); 
     const currentCount = attachments.length; 
     const maxFiles = appConfig.maxFiles || 5; 
-    const maxSizeKB = appConfig.maxFileSizeKB || 5000; // Default to 5MB if config missing
+    const maxSizeKB = appConfig.maxFileSizeKB || 5000;
 
     if (currentCount + files.length > maxFiles) return showMsg(`最多 ${maxFiles} 個文件`, 'error');
     
     const newAttachments = [];
     for (const file of files) {
         if (file.size > maxSizeKB * 1024) { showMsg(`${file.name} 過大`, 'error'); continue; }
-        
         try { 
             let base64;
-            // Only compress images. MODIFIED: Compression target ~120KB (Width 1024, Q 0.5)
             if (file.type.startsWith('image/')) {
                 base64 = await compressImage(file, 1024, 0.5); 
             } else {
                 base64 = await fileToBase64(file);
             }
             newAttachments.push({ name: file.name, type: file.type, size: file.size, data: base64 }); 
-        } catch (error) { 
-            console.error(error); 
-        }
+        } catch (error) { console.error(error); }
     }
     if (newAttachments.length > 0) setAttachments(prev => [...prev, ...newAttachments]);
     e.target.value = null; 
@@ -775,52 +735,20 @@ export default function App() {
   const handleLogoUpload = async (e) => { const file = e.target.files[0]; if(!file) return; try { const base64 = await fileToBase64(file); setAppConfig(prev => ({ ...prev, logo: base64 })); saveConfig({ appConfig: { ...appConfig, logo: base64 } }); showMsg("Logo 更新"); } catch(e) {} };
   const removeLogo = () => { setAppConfig(prev => ({ ...prev, logo: null })); saveConfig({ appConfig: { ...appConfig, logo: null } }); };
 
-// --- MISSING INVENTORY FUNCTIONS (請將這段代碼加入) ---
+  // --- Inventory Functions ---
+  const addMfr = () => { if (!newManufacturer.trim()) return; if (inventory[newManufacturer]) return showMsg("品牌已存在", "error"); setInventory(prev => ({ ...prev, [newManufacturer]: { models: [] } })); setNewManufacturer(''); showMsg("品牌已新增"); };
+  const deleteMfr = (mfr) => { setInventory(prev => { const next = { ...prev }; delete next[mfr]; return next; }); showMsg("品牌已刪除"); };
+  const addModel = (mfr) => { if (!newModel.id) return; const years = newModel.years.split(/[,，]/).map(y => y.trim()).filter(Boolean); const codes = newModel.codes.split(/[,，]/).map(c => c.trim()).filter(Boolean); setInventory(prev => { const mfrData = prev[mfr] || { models: [] }; const updatedModels = [...(mfrData.models || []), { id: newModel.id, years, codes }]; return { ...prev, [mfr]: { ...mfrData, models: updatedModels } }; }); setNewModel({ id: '', years: '', codes: '' }); showMsg("型號已新增"); };
+  const deleteModel = (mfr, modelId) => { setInventory(prev => { const mfrData = prev[mfr]; if (!mfrData) return prev; const updatedModels = mfrData.models.filter(m => m.id !== modelId); return { ...prev, [mfr]: { ...mfrData, models: updatedModels } }; }); showMsg("型號已刪除"); };
   
-  const addMfr = () => {
-      if (!newManufacturer.trim()) return;
-      if (inventory[newManufacturer]) return showMsg("品牌已存在", "error");
-      setInventory(prev => ({ ...prev, [newManufacturer]: { models: [] } }));
-      setNewManufacturer('');
-      showMsg("品牌已新增");
+  // --- Options Management (Colors) ---
+  const handleAddOption = (type, val) => {
+     if(!val.trim()) return;
+     setSysOptions(prev => ({...prev, [type]: [...(prev[type]||[]), val.trim()]}));
   };
-
-  const deleteMfr = (mfr) => {
-      setInventory(prev => {
-          const next = { ...prev };
-          delete next[mfr];
-          return next;
-      });
-      showMsg("品牌已刪除");
+  const handleDeleteOption = (type, val) => {
+     setSysOptions(prev => ({...prev, [type]: (prev[type]||[]).filter(x => x !== val)}));
   };
-
-  const addModel = (mfr) => {
-      if (!newModel.id) return;
-      // 處理年份和代號，支援逗號分隔
-      const years = newModel.years.split(/[,，]/).map(y => y.trim()).filter(Boolean);
-      const codes = newModel.codes.split(/[,，]/).map(c => c.trim()).filter(Boolean);
-      
-      setInventory(prev => {
-          const mfrData = prev[mfr] || { models: [] };
-          const updatedModels = [...(mfrData.models || []), { id: newModel.id, years, codes }];
-          return { ...prev, [mfr]: { ...mfrData, models: updatedModels } };
-      });
-      
-      setNewModel({ id: '', years: '', codes: '' });
-      showMsg("型號已新增");
-  };
-
-  const deleteModel = (mfr, modelId) => {
-      setInventory(prev => {
-          const mfrData = prev[mfr];
-          if (!mfrData) return prev;
-          const updatedModels = mfrData.models.filter(m => m.id !== modelId);
-          return { ...prev, [mfr]: { ...mfrData, models: updatedModels } };
-      });
-      showMsg("型號已刪除");
-  };
-  
-  // --- END MISSING FUNCTIONS ---
 
   // Calculations
   const rate = rates[country] || 0;
@@ -834,15 +762,13 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // --- Actions ---
+  // Actions
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
-      
-      // 修正：檢查 overrides 是否為瀏覽器事件物件 (Event)，如果是則忽略，避免資料庫崩潰
+      // 修正：檢查 overrides 是否為瀏覽器事件物件，如果是則忽略
       const safeOverrides = (overrides && overrides.preventDefault) ? {} : overrides;
-      
-      const dataToSave = { rates, fees, inventory, appConfig, ...safeOverrides };
-      
+      // 加入 sysOptions 儲存
+      const dataToSave = { rates, fees, inventory, appConfig, sysOptions, ...safeOverrides };
       try { 
           await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
           showMsg("設定已儲存"); 
@@ -851,6 +777,7 @@ export default function App() {
           showMsg("儲存失敗", "error"); 
       } 
   };
+
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
@@ -866,21 +793,13 @@ export default function App() {
   const handlePaymentSave = async (newPaymentsList) => {
       if (!paymentModalData || !db) return;
       const item = paymentModalData.item;
-      
       try {
           await updateDoc(doc(getHistoryRef(), item.id), { payments: newPaymentsList });
-          
-          // 更新本地 modal 資料，確保畫面不會跳掉或顯示舊數據
           setPaymentModalData(prev => ({ ...prev, item: { ...prev.item, payments: newPaymentsList } }));
-          
           showMsg("付款紀錄已更新");
-      } catch(e) { 
-          console.error(e);
-          showMsg("付款儲存失敗", "error"); 
-      }
+      } catch(e) { console.error(e); showMsg("付款儲存失敗", "error"); }
   };
   
-  // Defined at TOP LEVEL of App
   const generateCurrentReport = () => {
       if(totalCost <= 0) return showMsg("無效的計算數據", "error");
       const currentData = {
@@ -896,25 +815,11 @@ export default function App() {
       setReportTitle("車輛成本估價單");
   };
 
-  const handleShowReport = (item) => {
-      setReportData(item);
-      setReportTitle("車輛成本估價單");
-  };
+  const handleShowReport = (item) => { setReportData(item); setReportTitle("車輛成本估價單"); };
+  const handleShowReceipt = (item) => { setReportData(item); setReportTitle("正式收據 / Official Receipt"); };
+  const closeReport = () => { if (activeTab === 'calculator' && reportData) { loadHistoryItem(reportData); } setReportData(null); };
   
-  const handleShowReceipt = (item) => {
-      setReportData(item);
-      setReportTitle("正式收據 / Official Receipt");
-  };
-
-  const closeReport = () => {
-      // If we were editing, restore calculator values, otherwise just close
-      if (activeTab === 'calculator' && reportData) { loadHistoryItem(reportData); }
-      setReportData(null);
-  };
-  
-  // Views Routing
   if (reportData) return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} title={reportTitle} />;
-
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
   return (
@@ -959,7 +864,6 @@ export default function App() {
           {/* CALCULATOR TAB */}
           {activeTab === 'calculator' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-                 {/* ... (Calculator UI code remains exactly as before, no changes needed here) ... */}
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                       <div className="lg:col-span-7 space-y-6">
                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
@@ -976,9 +880,22 @@ export default function App() {
                                   <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
                                   <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
                                   
-                                  <InputGroup label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} type="text" placeholder="e.g. White" />
-                                  <InputGroup label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} type="text" placeholder="e.g. Black" />
+                                  {/* 修正：顏色改為下拉選單 */}
+                                  <AutocompleteInput label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} options={sysOptions.exteriorColors} placeholder="e.g. White" />
+                                  <AutocompleteInput label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} options={sysOptions.interiorColors} placeholder="e.g. Black" />
                                   
+                                  {/* 新增：波箱選項 */}
+                                  <div className="mb-4">
+                                      <label className="block text-sm font-bold text-slate-800 mb-1.5">波箱 (Transmission)</label>
+                                      <div className="relative">
+                                          <select value={details.transmission} onChange={e => setDetails(d => ({...d, transmission:e.target.value}))} className="block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold focus:ring-2 focus:ring-blue-800 focus:border-blue-800 sm:text-sm shadow-sm transition-colors bg-white">
+                                              <option value="AT">AT (自動)</option>
+                                              <option value="MT">MT (手動)</option>
+                                          </select>
+                                          <ChevronDown className="w-5 h-5 absolute right-3 top-3 text-slate-500 pointer-events-none" />
+                                      </div>
+                                  </div>
+
                                   <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
@@ -1010,17 +927,20 @@ export default function App() {
                                           {attachments.map((file, idx) => (
                                               <div 
                                                 key={idx} 
-                                                // 修正 1: 移除 overflow-hidden，確保放大圖不會被裁切
-                                                // 修正 2: 將滑鼠偵測 (Hover) 移到最外層容器，避免被遮罩層擋住
-                                                className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer z-0 hover:z-50"
+                                                // 修正：移除 overflow-hidden, 增加 z-index 管理
+                                                className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer z-0 hover:z-10"
                                                 onClick={() => file.type.startsWith('image/') && setPreviewImage(file)}
-                                                onMouseEnter={() => setHoveredFile(idx)}
-                                                onMouseLeave={() => setHoveredFile(null)}
                                               >
                                                   <div className="flex items-center gap-3">
                                                       {file.type.startsWith('image/') ? (
                                                           <>
-                                                              <img src={file.data} className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200" />
+                                                              {/* 修正：僅將滑鼠事件綁定在縮圖上 */}
+                                                              <img 
+                                                                src={file.data} 
+                                                                className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200 hover:ring-2 hover:ring-blue-400" 
+                                                                onMouseEnter={() => setHoveredFile(idx)}
+                                                                onMouseLeave={() => setHoveredFile(null)}
+                                                              />
                                                               {/* Hover Zoom Popover */}
                                                               {hoveredFile === idx && (
                                                                   <div className="fixed z-[9999] pointer-events-none drop-shadow-2xl" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
@@ -1044,23 +964,9 @@ export default function App() {
                                                   <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-3 rounded-xl backdrop-blur-[1px]">
                                                       <button className="text-white hover:text-blue-200 transform hover:scale-110 transition" title="預覽"><Eye className="w-5 h-5"/></button>
                                                       {file.type.startsWith('image/') && (
-                                                          <a 
-                                                            href={file.data} 
-                                                            download={file.name} 
-                                                            className="text-white hover:text-green-300 transform hover:scale-110 transition" 
-                                                            onClick={(e) => e.stopPropagation()} 
-                                                            title="下載"
-                                                          >
-                                                              <Download className="w-5 h-5"/>
-                                                          </a>
+                                                          <a href={file.data} download={file.name} className="text-white hover:text-green-300 transform hover:scale-110 transition" onClick={(e) => e.stopPropagation()} title="下載"><Download className="w-5 h-5"/></a>
                                                       )}
-                                                      <button 
-                                                        onClick={(e) => {e.stopPropagation(); removeAttachment(idx)}} 
-                                                        className="text-white hover:text-red-400 transform hover:scale-110 transition" 
-                                                        title="刪除"
-                                                      >
-                                                          <Trash2 className="w-5 h-5"/>
-                                                      </button>
+                                                      <button onClick={(e) => {e.stopPropagation(); removeAttachment(idx)}} className="text-white hover:text-red-400 transform hover:scale-110 transition" title="刪除"><Trash2 className="w-5 h-5"/></button>
                                                   </div>
                                               </div>
                                           ))}
@@ -1082,15 +988,12 @@ export default function App() {
                           <span className="text-xs sm:text-base text-slate-400 font-bold">車輛到港成本 <span className="text-[10px] sm:text-xs font-normal text-slate-500 ml-1">(含A1稅)</span></span>
                           <span className="text-lg sm:text-2xl font-bold tracking-tight">{fmt(landedCost)}</span>
                       </div>
-                      
                       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-end gap-3">
                           <div className="text-center sm:text-left">
                             <div className="text-[10px] sm:text-xs text-slate-400 font-bold uppercase tracking-widest mb-0.5">預計總成本 (Total)</div>
                             <div className="text-3xl sm:text-4xl font-black leading-none text-green-400 tracking-tighter shadow-black drop-shadow-sm">{fmt(totalCost)}</div>
                           </div>
-                          
                           <div className="flex gap-2 w-full sm:w-auto">
-                              {/* 這裡確保 generateCurrentReport 被正確綁定 */}
                               <button onClick={generateCurrentReport} disabled={totalCost<=0} className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 px-3 sm:px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-4 h-4"/> 報告</button>
                               <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="flex-1 sm:flex-none justify-center bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
                           </div>
@@ -1117,11 +1020,8 @@ export default function App() {
                                       {item.payments && item.payments.length > 0 && <div className="mt-2 text-xs font-bold text-green-600">已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}</div>}
                                   </div>
                                   <div className="flex gap-2">
-                                      {/* New Payment Button */}
                                       {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
-                                      {/* Receipt Button */}
                                       {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
-                                      
                                       <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
                                       <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="載入"><ArrowLeft className="w-5 h-5"/></button>
                                       <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
@@ -1144,7 +1044,6 @@ export default function App() {
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && (
               <div className="animate-in fade-in duration-300 space-y-8">
-                   {/* Settings content preserved... */}
                    <Card className="p-6 border-l-8 border-l-blue-600">
                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">當前資料帳號</div>
                        <div className="font-mono text-2xl font-black text-blue-900 bg-blue-50 p-4 rounded-xl border border-blue-100">{dataKey}</div>
@@ -1163,6 +1062,25 @@ export default function App() {
                                </label>
                                {appConfig.logo && <button onClick={removeLogo} className="text-red-600 text-xs font-bold hover:underline">移除 Logo</button>}
                            </div>
+                       </div>
+                   </Card>
+
+                   {/* 新增：選項設定 */}
+                   <Card className="p-6 border-l-8 border-yellow-500">
+                       <SectionHeader icon={Palette} title="選項設定" color="text-yellow-700" />
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                           <SimpleListManager 
+                                title="外觀顏色 (Exterior)" 
+                                items={sysOptions.exteriorColors} 
+                                onAdd={val => handleAddOption('exteriorColors', val)}
+                                onDelete={val => handleDeleteOption('exteriorColors', val)}
+                           />
+                           <SimpleListManager 
+                                title="內飾顏色 (Interior)" 
+                                items={sysOptions.interiorColors} 
+                                onAdd={val => handleAddOption('interiorColors', val)}
+                                onDelete={val => handleDeleteOption('interiorColors', val)}
+                           />
                        </div>
                    </Card>
 
@@ -1223,7 +1141,7 @@ export default function App() {
                            </div>
                        ))}
                    </Card>
-                   <div className="flex justify-end gap-4"><button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button><button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button></div>
+                   <div className="flex justify-end gap-4"><button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setSysOptions(DEFAULT_OPTIONS); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button><button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button></div>
               </div>
           )}
       </div>
