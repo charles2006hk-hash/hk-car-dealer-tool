@@ -834,8 +834,23 @@ export default function App() {
   const totalCost = landedCost + hkLicenseTotal;
   const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
 
-  // Actions
-  const saveConfig = async (overrides = {}) => { if (!db) return; const dataToSave = { rates, fees, inventory, appConfig, ...overrides }; try { await setDoc(getSettingsRef(), dataToSave, { merge: false }); showMsg("設定已儲存"); } catch(e) { showMsg("失敗", "error"); } };
+  // --- Actions ---
+  const saveConfig = async (overrides = {}) => {
+      if (!db) return;
+      
+      // 修正：檢查 overrides 是否為瀏覽器事件物件 (Event)，如果是則忽略，避免資料庫崩潰
+      const safeOverrides = (overrides && overrides.preventDefault) ? {} : overrides;
+      
+      const dataToSave = { rates, fees, inventory, appConfig, ...safeOverrides };
+      
+      try { 
+          await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
+          showMsg("設定已儲存"); 
+      } catch(e) { 
+          console.error(e);
+          showMsg("儲存失敗", "error"); 
+      } 
+  };
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
@@ -995,24 +1010,23 @@ export default function App() {
                                           {attachments.map((file, idx) => (
                                               <div 
                                                 key={idx} 
-                                                className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer"
+                                                // 修正 1: 移除 overflow-hidden，確保放大圖不會被裁切
+                                                // 修正 2: 將滑鼠偵測 (Hover) 移到最外層容器，避免被遮罩層擋住
+                                                className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer z-0 hover:z-50"
                                                 onClick={() => file.type.startsWith('image/') && setPreviewImage(file)}
+                                                onMouseEnter={() => setHoveredFile(idx)}
+                                                onMouseLeave={() => setHoveredFile(null)}
                                               >
-                                                  {/* Image Container with Hover State */}
-                                                  <div 
-                                                    className="flex items-center gap-3"
-                                                    onMouseEnter={() => setHoveredFile(idx)}
-                                                    onMouseLeave={() => setHoveredFile(null)}
-                                                  >
+                                                  <div className="flex items-center gap-3">
                                                       {file.type.startsWith('image/') ? (
                                                           <>
                                                               <img src={file.data} className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200" />
                                                               {/* Hover Zoom Popover */}
                                                               {hoveredFile === idx && (
-                                                                  <div className="fixed z-[999] pointer-events-none" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                                      <img src={file.data} className="max-w-[80vw] max-h-[80vh] object-contain shadow-2xl rounded-lg border-4 border-white bg-white" />
-                                                                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">
-                                                                          預覽模式
+                                                                  <div className="fixed z-[9999] pointer-events-none drop-shadow-2xl" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                                      <img src={file.data} className="max-w-[80vw] max-h-[80vh] object-contain rounded-lg border-4 border-white bg-white shadow-2xl" />
+                                                                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap shadow-lg backdrop-blur-sm">
+                                                                          預覽模式 ({(file.size/1024).toFixed(0)} KB)
                                                                       </div>
                                                                   </div>
                                                               )}
@@ -1027,13 +1041,13 @@ export default function App() {
                                                   </div>
                                                   
                                                   {/* Overlay Actions */}
-                                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3 rounded-xl">
-                                                      <button className="text-white hover:text-blue-200" title="預覽"><Eye className="w-5 h-5"/></button>
+                                                  <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-3 rounded-xl backdrop-blur-[1px]">
+                                                      <button className="text-white hover:text-blue-200 transform hover:scale-110 transition" title="預覽"><Eye className="w-5 h-5"/></button>
                                                       {file.type.startsWith('image/') && (
                                                           <a 
                                                             href={file.data} 
                                                             download={file.name} 
-                                                            className="text-white hover:text-green-300" 
+                                                            className="text-white hover:text-green-300 transform hover:scale-110 transition" 
                                                             onClick={(e) => e.stopPropagation()} 
                                                             title="下載"
                                                           >
@@ -1042,7 +1056,7 @@ export default function App() {
                                                       )}
                                                       <button 
                                                         onClick={(e) => {e.stopPropagation(); removeAttachment(idx)}} 
-                                                        className="text-white hover:text-red-400" 
+                                                        className="text-white hover:text-red-400 transform hover:scale-110 transition" 
                                                         title="刪除"
                                                       >
                                                           <Trash2 className="w-5 h-5"/>
