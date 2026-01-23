@@ -23,7 +23,6 @@ const APP_ID_PATH = 'hk-car-dealer-app';
 const DEFAULT_RATES = { JP: 0.053, UK: 10.2, OT: 7.8 };
 const DEFAULT_CONFIG = { maxFiles: 5, maxFileSizeKB: 5000, logo: null }; 
 
-// 新增：預設選項 (顏色)
 const DEFAULT_OPTIONS = {
     exteriorColors: ['White', 'Black', 'Silver', 'Grey', 'Pearl', 'Blue', 'Red', 'Beige', 'Green', 'Yellow'],
     interiorColors: ['Black', 'Beige', 'Grey', 'Red', 'Brown', 'Tan', 'White']
@@ -101,6 +100,28 @@ const DEFAULT_INVENTORY = {
   Toyota: { models: [{ id: 'Alphard', years: ['2023', '2022'], codes: ['AH30', 'AH40'] }, { id: 'Noah', years: ['2023', '2021'], codes: ['ZWR90', 'ZRR80'] }] },
   Honda: { models: [{ id: 'Stepwgn', years: ['2024', '2022'], codes: ['RP6', 'RK5'] }] },
   BMW: { models: [] },
+};
+
+// --- Helper: Convert Color Name to Hex (Approx) ---
+const getColorHex = (name) => {
+    if (!name) return 'transparent';
+    const n = name.toLowerCase();
+    if (n.includes('white')) return '#f8f9fa';
+    if (n.includes('pearl')) return '#fdfcf0';
+    if (n.includes('black')) return '#1a1a1a';
+    if (n.includes('silver')) return '#c0c0c0';
+    if (n.includes('grey') || n.includes('gray')) return '#808080';
+    if (n.includes('blue')) return '#3b82f6';
+    if (n.includes('red')) return '#ef4444';
+    if (n.includes('beige')) return '#f5f5dc';
+    if (n.includes('brown')) return '#8b4513';
+    if (n.includes('tan')) return '#d2b48c';
+    if (n.includes('green')) return '#22c55e';
+    if (n.includes('yellow')) return '#eab308';
+    if (n.includes('purple')) return '#a855f7';
+    if (n.includes('orange')) return '#f97316';
+    if (n.includes('gold')) return '#ffd700';
+    return name; // Fallback to CSS name or input
 };
 
 const calculateFRT = (prp) => {
@@ -215,7 +236,6 @@ const AutocompleteInput = ({ label, value, onChange, options = [], disabled = fa
   );
 };
 
-// 新增：簡易列表管理組件 (用於設定顏色)
 const SimpleListManager = ({ title, items, onAdd, onDelete }) => {
     const [newItem, setNewItem] = useState('');
     return (
@@ -1016,6 +1036,28 @@ export default function App() {
                                       </div>
                                       <div className="font-black text-slate-900 text-xl tracking-tight">{item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span></div>
                                       <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
+                                      
+                                      {/* ADDED: Transmission & Colors Info */}
+                                      <div className="flex flex-wrap gap-2 mt-2">
+                                          {item.details.transmission && (
+                                              <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                                  <Cog className="w-3 h-3" /> {item.details.transmission}
+                                              </div>
+                                          )}
+                                          {item.details.exteriorColor && (
+                                               <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                                  <div className="w-3 h-3 rounded-full border border-slate-300 shadow-sm" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
+                                                  Ext: {item.details.exteriorColor}
+                                              </div>
+                                          )}
+                                           {item.details.interiorColor && (
+                                               <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                                  <div className="w-3 h-3 rounded-full border border-slate-300 shadow-sm" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
+                                                  Int: {item.details.interiorColor}
+                                              </div>
+                                          )}
+                                      </div>
+
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-2 text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded w-fit"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                       {item.payments && item.payments.length > 0 && <div className="mt-2 text-xs font-bold text-green-600">已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}</div>}
                                   </div>
