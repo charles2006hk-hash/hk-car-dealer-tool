@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog, MapPin, Anchor, Package } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -28,17 +28,25 @@ const DEFAULT_OPTIONS = {
     interiorColors: ['Black', 'Beige', 'Grey', 'Red', 'Brown', 'Tan', 'White']
 };
 
+const STATUS_OPTIONS = {
+    QUOTING: { id: 'QUOTING', label: '報價中', color: 'bg-slate-100 text-slate-600 border-slate-300' },
+    IN_PROGRESS: { id: 'IN_PROGRESS', label: '進行中', color: 'bg-orange-100 text-orange-700 border-orange-300' },
+    DELIVERED: { id: 'DELIVERED', label: '已交貨', color: 'bg-green-100 text-green-700 border-green-300' }
+};
+
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
   OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
+// Modified: Added Insurance to Origin Fees
 const DEFAULT_FEES = {
   JP: {
     origin: { 
         auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, 
-        shipping: { label: '船運費', val: '100000' } 
+        shipping: { label: '船運費', val: '100000' },
+        insurance: { label: '保險費用', val: '0' } // Added
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -58,7 +66,8 @@ const DEFAULT_FEES = {
     origin: { 
         shipping: { label: '船運費', val: '1500' },
         inspection: { label: '當地驗車', val: '300' },
-        other: { label: '其他費用', val: '200' }
+        other: { label: '其他費用', val: '200' },
+        insurance: { label: '保險費用', val: '0' } // Added
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -78,7 +87,8 @@ const DEFAULT_FEES = {
     origin: { 
         shipping: { label: '船運費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
-        other: { label: '其他費用', val: '500' }
+        other: { label: '其他費用', val: '500' },
+        insurance: { label: '保險費用', val: '0' } // Added
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -121,7 +131,7 @@ const getColorHex = (name) => {
     if (n.includes('purple')) return '#a855f7';
     if (n.includes('orange')) return '#f97316';
     if (n.includes('gold')) return '#ffd700';
-    return name; // Fallback to CSS name or input
+    return name;
 };
 
 const calculateFRT = (prp) => {
@@ -294,6 +304,68 @@ const ImagePreviewModal = ({ file, onClose }) => {
                 </div>
                 <div className="mt-4 text-white/60 text-sm font-mono">{file.name}</div>
             </div>
+        </div>
+    );
+};
+
+// --- NEW COMPONENT: Shipping Track Modal ---
+const ShippingTrackModal = ({ historyItem, onClose, onSave }) => {
+    const [note, setNote] = useState('');
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    
+    const tracks = historyItem.shippingTrack || [];
+
+    const handleAdd = () => {
+        if (!note.trim()) return;
+        const newTrack = { date, note, createdAt: Date.now() };
+        const updatedTracks = [newTrack, ...tracks];
+        onSave(updatedTracks);
+        setNote('');
+    };
+
+    const handleDelete = (index) => {
+        if (!window.confirm("刪除此軌跡？")) return;
+        const updatedTracks = tracks.filter((_, i) => i !== index);
+        onSave(updatedTracks);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+             <Card className="max-w-md w-full animate-in zoom-in-95 shadow-2xl border-0 ring-1 ring-white/20">
+                <div className="p-5 border-b-2 border-slate-200 bg-slate-50 flex justify-between items-center">
+                    <h3 className="font-black flex gap-2 items-center text-xl text-slate-800">
+                        <Anchor className="w-6 h-6 text-blue-600"/> 物流軌跡
+                    </h3>
+                    <button onClick={onClose}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    {/* Input Area */}
+                    <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-1/3 p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
+                             <input type="text" placeholder="最新狀態 (e.g. 已裝櫃)" value={note} onChange={e => setNote(e.target.value)} className="w-2/3 p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
+                        </div>
+                        <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold shadow hover:bg-blue-700 transition">新增紀錄</button>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="max-h-60 overflow-y-auto space-y-0 relative border-l-2 border-slate-200 ml-2">
+                        {tracks.length === 0 && <div className="text-slate-400 text-xs italic pl-4">暫無物流紀錄</div>}
+                        {tracks.map((t, idx) => (
+                            <div key={idx} className="mb-4 ml-4 relative">
+                                <div className="absolute -left-[21px] top-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-sm"></div>
+                                <div className="flex justify-between items-start bg-slate-50 p-2 rounded border border-slate-200">
+                                    <div>
+                                        <div className="text-[10px] font-bold text-slate-500">{t.date}</div>
+                                        <div className="text-sm font-bold text-slate-800">{t.note}</div>
+                                    </div>
+                                    <button onClick={() => handleDelete(idx)} className="text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </Card>
         </div>
     );
 };
@@ -632,10 +704,11 @@ export default function App() {
   const [history, setHistory] = useState([]);
   
   // NEW STATES
-  const [sysOptions, setSysOptions] = useState(DEFAULT_OPTIONS); // 顏色選項狀態
+  const [sysOptions, setSysOptions] = useState(DEFAULT_OPTIONS); 
   const [reportData, setReportData] = useState(null);
   const [reportTitle, setReportTitle] = useState("車輛成本估價單");
   const [paymentModalData, setPaymentModalData] = useState(null);
+  const [trackingModalData, setTrackingModalData] = useState(null); // Added
   const [hoveredFile, setHoveredFile] = useState(null);
 
   const [carPrice, setCarPrice] = useState('');
@@ -643,7 +716,10 @@ export default function App() {
   const [currOriginFees, setCurrOriginFees] = useState(DEFAULT_FEES['JP'].origin);
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '' });
+  
+  // Added departureDate and shippingDuration
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', departureDate: '', shippingDuration: '' });
+  
   const [attachments, setAttachments] = useState([]);
   const [newManufacturer, setNewManufacturer] = useState('');
   const [editingMfr, setEditingMfr] = useState(null);
@@ -677,15 +753,31 @@ export default function App() {
           if (snap.exists()) {
               const d = snap.data();
               let loadedFees = d.fees;
+              
+              // Ensure insurance exists in loaded fees (migration)
+              if (loadedFees) {
+                  Object.keys(loadedFees).forEach(k => {
+                      if (loadedFees[k].origin && !loadedFees[k].origin.insurance) {
+                          loadedFees[k].origin.insurance = { label: '保險費用', val: '0' };
+                      }
+                  });
+              }
+              // Migration for old UK/OT fields if needed
               if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
                    loadedFees = { ...loadedFees, UK: DEFAULT_FEES.UK, OT: DEFAULT_FEES.OT };
-                   setDoc(ref, { fees: loadedFees }, { merge: true });
               }
+              
+              if (loadedFees) {
+                  setDoc(ref, { fees: loadedFees }, { merge: true });
+                  setFees(loadedFees);
+              } else {
+                  setFees(DEFAULT_FEES);
+              }
+
               if(d.rates) setRates(d.rates);
-              setFees(loadedFees || DEFAULT_FEES);
               if(d.inventory) setInventory(d.inventory);
               if(d.appConfig) setAppConfig(d.appConfig);
-              if(d.sysOptions) setSysOptions(d.sysOptions); // 同步選項
+              if(d.sysOptions) setSysOptions(d.sysOptions); 
           } else { 
               setDoc(ref, { rates: DEFAULT_RATES, fees: DEFAULT_FEES, inventory: DEFAULT_INVENTORY, appConfig: DEFAULT_CONFIG, sysOptions: DEFAULT_OPTIONS }, { merge: true }); 
           }
@@ -785,9 +877,7 @@ export default function App() {
   // Actions
   const saveConfig = async (overrides = {}) => {
       if (!db) return;
-      // 修正：檢查 overrides 是否為瀏覽器事件物件，如果是則忽略
       const safeOverrides = (overrides && overrides.preventDefault) ? {} : overrides;
-      // 加入 sysOptions 儲存
       const dataToSave = { rates, fees, inventory, appConfig, sysOptions, ...safeOverrides };
       try { 
           await setDoc(getSettingsRef(), dataToSave, { merge: false }); 
@@ -801,11 +891,34 @@ export default function App() {
   const saveHistoryRecord = async () => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
-      const record = { ts: Date.now(), date: new Date().toLocaleString('zh-HK'), timestamp: serverTimestamp(), country, details, vals: { carPrice, prp, rate }, fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, attachments, isLocked: false };
+      
+      // Added: Default status and empty shipping track
+      const record = { 
+          ts: Date.now(), 
+          date: new Date().toLocaleString('zh-HK'), 
+          timestamp: serverTimestamp(), 
+          country, 
+          details, 
+          vals: { carPrice, prp, rate }, 
+          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
+          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
+          attachments, 
+          isLocked: false,
+          status: 'QUOTING', // Default status
+          shippingTrack: [] // Empty track
+      };
+      
       if (JSON.stringify(record).length > 950000) return showMsg("記錄過大", "error");
       try { await addDoc(getHistoryRef(), record); showMsg("已記錄"); setTimeout(() => setActiveTab('history'), 500); } catch(e) { showMsg("失敗", "error"); }
   };
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
+  
+  // Added: Update Status
+  const changeStatus = async (item, newStatus) => {
+      if (!db) return;
+      try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { status: newStatus }); showMsg("狀態已更新"); } catch(e) { showMsg("更新失敗", "error"); }
+  };
+
   const deleteHistoryItem = (item) => { if (item.isLocked) return showMsg("已鎖定", "error"); setModal({ title: "刪除", message: "確定？", type: "danger", onConfirm: async () => { try { await deleteDoc(doc(getHistoryRef(), item.id)); setModal(null); showMsg("已刪除"); } catch(e) {} } }); };
   const loadHistoryItem = (item) => { setCountry(item.country); setCarPrice(item.vals.carPrice); setPrp(item.vals.prp); setDetails(item.details); setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license); setAttachments(item.attachments || []); setActiveTab('calculator'); showMsg("已載入"); };
 
@@ -818,6 +931,17 @@ export default function App() {
           setPaymentModalData(prev => ({ ...prev, item: { ...prev.item, payments: newPaymentsList } }));
           showMsg("付款紀錄已更新");
       } catch(e) { console.error(e); showMsg("付款儲存失敗", "error"); }
+  };
+
+  // Shipping Track Logic
+  const handleTrackSave = async (newTrackList) => {
+      if (!trackingModalData || !db) return;
+      const item = trackingModalData.item;
+      try {
+          await updateDoc(doc(getHistoryRef(), item.id), { shippingTrack: newTrackList });
+          setTrackingModalData(prev => ({ ...prev, item: { ...prev.item, shippingTrack: newTrackList } }));
+          showMsg("物流紀錄已更新");
+      } catch(e) { console.error(e); showMsg("儲存失敗", "error"); }
   };
   
   const generateCurrentReport = () => {
@@ -847,6 +971,7 @@ export default function App() {
       <ConfirmationModal config={modal} onClose={() => setModal(null)} />
       {previewImage && <ImagePreviewModal file={previewImage} onClose={() => setPreviewImage(null)} />}
       {paymentModalData && <PaymentModal historyItem={paymentModalData.item} onClose={() => setPaymentModalData(null)} onSave={handlePaymentSave} />}
+      {trackingModalData && <ShippingTrackModal historyItem={trackingModalData.item} onClose={() => setTrackingModalData(null)} onSave={handleTrackSave} />}
 
       <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-xl print:hidden border-b-4 border-blue-600">
           <div className="max-w-7xl mx-auto flex flex-col gap-4">
@@ -900,11 +1025,9 @@ export default function App() {
                                   <AutocompleteInput label="年份" value={details.year} onChange={v => setDetails(d => ({...d, year:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.years || []} />
                                   <AutocompleteInput label="代號" value={details.code} onChange={v => setDetails(d => ({...d, code:v}))} options={inventory[details.manufacturer]?.models.find(m=>m.id===details.model)?.codes || []} />
                                   
-                                  {/* 修正：顏色改為下拉選單 */}
                                   <AutocompleteInput label="外觀顏色" value={details.exteriorColor} onChange={v => setDetails(d => ({...d, exteriorColor:v}))} options={sysOptions.exteriorColors} placeholder="e.g. White" />
                                   <AutocompleteInput label="內飾顏色" value={details.interiorColor} onChange={v => setDetails(d => ({...d, interiorColor:v}))} options={sysOptions.interiorColors} placeholder="e.g. Black" />
                                   
-                                  {/* 新增：波箱選項 */}
                                   <div className="mb-4">
                                       <label className="block text-sm font-bold text-slate-800 mb-1.5">波箱 (Transmission)</label>
                                       <div className="relative">
@@ -919,6 +1042,10 @@ export default function App() {
                                   <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
+                                  
+                                  {/* Added: Shipping Inputs */}
+                                  <div className="col-span-2"><InputGroup label="開船日期" value={details.departureDate} onChange={v => setDetails(d => ({...d, departureDate:v}))} type="date" /></div>
+                                  <div className="col-span-2"><InputGroup label="預計船期" value={details.shippingDuration} onChange={v => setDetails(d => ({...d, shippingDuration:v}))} type="text" placeholder="e.g. 14 天" /></div>
                               </div>
                           </Card>
 
@@ -947,21 +1074,18 @@ export default function App() {
                                           {attachments.map((file, idx) => (
                                               <div 
                                                 key={idx} 
-                                                // 修正：移除 overflow-hidden, 增加 z-index 管理
                                                 className="relative group border-2 border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition cursor-pointer z-0 hover:z-10"
                                                 onClick={() => file.type.startsWith('image/') && setPreviewImage(file)}
                                               >
                                                   <div className="flex items-center gap-3">
                                                       {file.type.startsWith('image/') ? (
                                                           <>
-                                                              {/* 修正：僅將滑鼠事件綁定在縮圖上 */}
                                                               <img 
                                                                 src={file.data} 
                                                                 className="w-12 h-12 object-cover rounded-lg bg-slate-100 border border-slate-200 hover:ring-2 hover:ring-blue-400" 
                                                                 onMouseEnter={() => setHoveredFile(idx)}
                                                                 onMouseLeave={() => setHoveredFile(null)}
                                                               />
-                                                              {/* Hover Zoom Popover */}
                                                               {hoveredFile === idx && (
                                                                   <div className="fixed z-[9999] pointer-events-none drop-shadow-2xl" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
                                                                       <img src={file.data} className="max-w-[80vw] max-h-[80vh] object-contain rounded-lg border-4 border-white bg-white shadow-2xl" />
@@ -980,7 +1104,6 @@ export default function App() {
                                                       </div>
                                                   </div>
                                                   
-                                                  {/* Overlay Actions */}
                                                   <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition duration-200 flex items-center justify-center gap-3 rounded-xl backdrop-blur-[1px]">
                                                       <button className="text-white hover:text-blue-200 transform hover:scale-110 transition" title="預覽"><Eye className="w-5 h-5"/></button>
                                                       {file.type.startsWith('image/') && (
@@ -1031,13 +1154,27 @@ export default function App() {
                               <div className="flex justify-between items-start mb-4">
                                   <div>
                                       <div className="flex items-center gap-2 mb-1">
+                                          {/* Status Badge with Select */}
+                                          <div className="relative group/status">
+                                            <span className={`text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider border cursor-pointer ${STATUS_OPTIONS[item.status || 'QUOTING'].color}`}>
+                                                {STATUS_OPTIONS[item.status || 'QUOTING'].label}
+                                            </span>
+                                            {/* Status Dropdown */}
+                                            <div className="absolute top-full left-0 mt-1 hidden group-hover/status:block bg-white border border-slate-200 shadow-xl rounded-lg z-20 min-w-[100px]">
+                                                {Object.values(STATUS_OPTIONS).map(st => (
+                                                    <div key={st.id} onClick={() => changeStatus(item, st.id)} className={`px-3 py-2 text-xs font-bold hover:bg-slate-50 cursor-pointer ${st.id === item.status ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}>
+                                                        {st.label}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                          </div>
+                                          
                                           <span className="bg-blue-100 text-blue-900 text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider">{item.country}</span>
                                           <span className="text-xs text-slate-400 font-bold">{item.date}</span>
                                       </div>
                                       <div className="font-black text-slate-900 text-xl tracking-tight">{item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span></div>
                                       <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
                                       
-                                      {/* ADDED: Transmission & Colors Info */}
                                       <div className="flex flex-wrap gap-2 mt-2">
                                           {item.details.transmission && (
                                               <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
@@ -1056,12 +1193,21 @@ export default function App() {
                                                   Int: {item.details.interiorColor}
                                               </div>
                                           )}
+                                          {/* Show Departure Info */}
+                                          {item.details.departureDate && (
+                                              <div className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100 text-blue-600">
+                                                  <Ship className="w-3 h-3" /> 開船: {item.details.departureDate}
+                                              </div>
+                                          )}
                                       </div>
 
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-2 text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded w-fit"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                       {item.payments && item.payments.length > 0 && <div className="mt-2 text-xs font-bold text-green-600">已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}</div>}
                                   </div>
                                   <div className="flex gap-2">
+                                      {/* Added: Tracking Button */}
+                                      <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
+                                      
                                       {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
                                       {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
                                       <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
