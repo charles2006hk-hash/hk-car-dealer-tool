@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog, MapPin, Anchor, Package } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog, MapPin, Anchor, Package, Plane, Clock, Filter } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -40,13 +40,12 @@ const COUNTRIES = {
   OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
 };
 
-// Modified: Added Insurance to Origin Fees
 const DEFAULT_FEES = {
   JP: {
     origin: { 
         auctionFee: { label: '拍賣場/FOB費用', val: '20000' }, 
-        shipping: { label: '船運費', val: '100000' },
-        insurance: { label: '保險費用', val: '0' } // Added
+        shipping: { label: '運輸費', val: '100000' },
+        insurance: { label: '保險費用', val: '0' } 
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -64,10 +63,10 @@ const DEFAULT_FEES = {
   },
   UK: {
     origin: { 
-        shipping: { label: '船運費', val: '1500' },
+        shipping: { label: '運輸費', val: '1500' },
         inspection: { label: '當地驗車', val: '300' },
         other: { label: '其他費用', val: '200' },
-        insurance: { label: '保險費用', val: '0' } // Added
+        insurance: { label: '保險費用', val: '0' } 
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -85,10 +84,10 @@ const DEFAULT_FEES = {
   },
   OT: {
     origin: { 
-        shipping: { label: '船運費', val: '2000' },
+        shipping: { label: '運輸費', val: '2000' },
         inspection: { label: '當地驗車', val: '500' },
         other: { label: '其他費用', val: '500' },
-        insurance: { label: '保險費用', val: '0' } // Added
+        insurance: { label: '保險費用', val: '0' } 
     },
     hk_misc: { 
         terminal: { label: '碼頭費', val: '500' },
@@ -308,7 +307,58 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- NEW COMPONENT: Shipping Track Modal ---
+// --- NEW COMPONENT: Visual Transport Progress ---
+const TransportProgressBar = ({ departureDate, durationDays, type }) => {
+    if (!departureDate || !durationDays) return null;
+
+    const start = new Date(departureDate).getTime();
+    const days = parseFloat(durationDays) || 0;
+    const end = start + (days * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    
+    // Calculate percentage (0 to 100)
+    let percentage = 0;
+    if (now > start) {
+        percentage = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
+    }
+
+    const Icon = type === 'AIR' ? Plane : Ship;
+    const isArrived = percentage >= 100;
+    const arrivalDate = new Date(end).toLocaleDateString('zh-HK');
+    
+    // Calculate days remaining
+    const daysLeft = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+
+    return (
+        <div className="w-full mt-3 mb-1">
+            <div className="flex justify-between items-end mb-1 text-[10px] font-bold text-slate-500">
+                <span>{departureDate}</span>
+                <span className={isArrived ? 'text-green-600' : 'text-blue-600'}>
+                    {isArrived ? '已抵達' : `預計: ${arrivalDate} (${daysLeft > 0 ? `還有 ${daysLeft} 天` : '即將抵達'})`}
+                </span>
+            </div>
+            <div className="relative w-full h-2 bg-slate-200 rounded-full overflow-visible">
+                {/* Progress Fill */}
+                <div 
+                    className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${isArrived ? 'bg-green-500' : (type === 'AIR' ? 'bg-sky-500' : 'bg-blue-600')}`}
+                    style={{ width: `${percentage}%` }}
+                ></div>
+                
+                {/* Moving Icon */}
+                <div 
+                    className="absolute top-1/2 -translate-y-1/2 transition-all duration-1000 z-10"
+                    style={{ left: `${percentage}%`, transform: `translate(-50%, -50%)` }}
+                >
+                    <div className={`p-1 rounded-full shadow-md border-2 border-white ${isArrived ? 'bg-green-500' : (type === 'AIR' ? 'bg-sky-500' : 'bg-blue-600')}`}>
+                         <Icon className="w-3 h-3 text-white" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Shipping Track Modal ---
 const ShippingTrackModal = ({ historyItem, onClose, onSave }) => {
     const [note, setNote] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -708,8 +758,11 @@ export default function App() {
   const [reportData, setReportData] = useState(null);
   const [reportTitle, setReportTitle] = useState("車輛成本估價單");
   const [paymentModalData, setPaymentModalData] = useState(null);
-  const [trackingModalData, setTrackingModalData] = useState(null); // Added
+  const [trackingModalData, setTrackingModalData] = useState(null);
   const [hoveredFile, setHoveredFile] = useState(null);
+  
+  // Filter State
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
@@ -717,8 +770,8 @@ export default function App() {
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
-  // Added departureDate and shippingDuration
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', departureDate: '', shippingDuration: '' });
+  // Details: Added transportType, departureDate, shippingDuration
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', transportType: 'SEA', departureDate: '', shippingDuration: '' });
   
   const [attachments, setAttachments] = useState([]);
   const [newManufacturer, setNewManufacturer] = useState('');
@@ -753,8 +806,6 @@ export default function App() {
           if (snap.exists()) {
               const d = snap.data();
               let loadedFees = d.fees;
-              
-              // Ensure insurance exists in loaded fees (migration)
               if (loadedFees) {
                   Object.keys(loadedFees).forEach(k => {
                       if (loadedFees[k].origin && !loadedFees[k].origin.insurance) {
@@ -762,11 +813,9 @@ export default function App() {
                       }
                   });
               }
-              // Migration for old UK/OT fields if needed
               if (loadedFees && loadedFees.UK && loadedFees.UK.origin && loadedFees.UK.origin.auctionFee) {
                    loadedFees = { ...loadedFees, UK: DEFAULT_FEES.UK, OT: DEFAULT_FEES.OT };
               }
-              
               if (loadedFees) {
                   setDoc(ref, { fees: loadedFees }, { merge: true });
                   setFees(loadedFees);
@@ -892,7 +941,6 @@ export default function App() {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
       
-      // Added: Default status and empty shipping track
       const record = { 
           ts: Date.now(), 
           date: new Date().toLocaleString('zh-HK'), 
@@ -904,8 +952,8 @@ export default function App() {
           results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
           attachments, 
           isLocked: false,
-          status: 'QUOTING', // Default status
-          shippingTrack: [] // Empty track
+          status: 'QUOTING', 
+          shippingTrack: [] 
       };
       
       if (JSON.stringify(record).length > 950000) return showMsg("記錄過大", "error");
@@ -913,7 +961,6 @@ export default function App() {
   };
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
   
-  // Added: Update Status
   const changeStatus = async (item, newStatus) => {
       if (!db) return;
       try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { status: newStatus }); showMsg("狀態已更新"); } catch(e) { showMsg("更新失敗", "error"); }
@@ -963,6 +1010,14 @@ export default function App() {
   const handleShowReceipt = (item) => { setReportData(item); setReportTitle("正式收據 / Official Receipt"); };
   const closeReport = () => { if (activeTab === 'calculator' && reportData) { loadHistoryItem(reportData); } setReportData(null); };
   
+  // Filter Logic
+  const filteredHistory = useMemo(() => {
+      if (filterStatus === 'ALL') return history;
+      if (filterStatus === 'ACTIVE') return history.filter(h => h.status !== 'DELIVERED');
+      if (filterStatus === 'DONE') return history.filter(h => h.status === 'DELIVERED');
+      return history;
+  }, [history, filterStatus]);
+
   if (reportData) return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} title={reportTitle} />;
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
 
@@ -1043,9 +1098,23 @@ export default function App() {
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="7" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
                                   
-                                  {/* Added: Shipping Inputs */}
-                                  <div className="col-span-2"><InputGroup label="開船日期" value={details.departureDate} onChange={v => setDetails(d => ({...d, departureDate:v}))} type="date" /></div>
-                                  <div className="col-span-2"><InputGroup label="預計船期" value={details.shippingDuration} onChange={v => setDetails(d => ({...d, shippingDuration:v}))} type="text" placeholder="e.g. 14 天" /></div>
+                                  <div className="col-span-2 md:col-span-4 border-t border-slate-200 pt-4 mt-2">
+                                     <SectionHeader icon={Plane} title="運輸資訊" color="text-slate-600" />
+                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                         <div>
+                                              <label className="block text-sm font-bold text-slate-800 mb-1.5">運輸方式</label>
+                                              <div className="relative">
+                                                  <select value={details.transportType} onChange={e => setDetails(d => ({...d, transportType:e.target.value}))} className="block w-full rounded-lg py-2.5 pl-3 pr-10 text-black border-2 border-slate-300 font-bold focus:ring-2 focus:ring-blue-800 sm:text-sm bg-white">
+                                                      <option value="SEA">船運 (Sea)</option>
+                                                      <option value="AIR">空運 (Air)</option>
+                                                  </select>
+                                                  <ChevronDown className="w-5 h-5 absolute right-3 top-3 text-slate-500 pointer-events-none" />
+                                              </div>
+                                         </div>
+                                         <InputGroup label="出發日期" value={details.departureDate} onChange={v => setDetails(d => ({...d, departureDate:v}))} type="date" />
+                                         <InputGroup label="預計需時 (天)" value={details.shippingDuration} onChange={v => setDetails(d => ({...d, shippingDuration:v}))} type="number" placeholder="e.g. 14" />
+                                     </div>
+                                  </div>
                               </div>
                           </Card>
 
@@ -1148,11 +1217,33 @@ export default function App() {
           {/* HISTORY TAB */}
           {activeTab === 'history' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
-                  {history.length === 0 ? (<div className="text-center py-20 text-slate-400 bg-white rounded-xl border-2 border-dashed border-slate-300">暫無記錄</div>) : (
-                      history.map(item => (
+                  {/* Filter Buttons */}
+                  <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+                      <button 
+                          onClick={() => setFilterStatus('ALL')} 
+                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                      >
+                          全部
+                      </button>
+                      <button 
+                          onClick={() => setFilterStatus('ACTIVE')} 
+                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ACTIVE' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                      >
+                          進行中
+                      </button>
+                      <button 
+                          onClick={() => setFilterStatus('DONE')} 
+                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DONE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                      >
+                          已完成
+                      </button>
+                  </div>
+
+                  {filteredHistory.length === 0 ? (<div className="text-center py-20 text-slate-400 bg-white rounded-xl border-2 border-dashed border-slate-300">暫無記錄</div>) : (
+                      filteredHistory.map(item => (
                           <Card key={item.id} className="p-6 group hover:shadow-xl transition-all duration-200 border-l-8 border-l-blue-500 hover:translate-x-1">
                               <div className="flex justify-between items-start mb-4">
-                                  <div>
+                                  <div className="w-full">
                                       <div className="flex items-center gap-2 mb-1">
                                           {/* Status Badge with Select */}
                                           <div className="relative group/status">
@@ -1193,29 +1284,30 @@ export default function App() {
                                                   Int: {item.details.interiorColor}
                                               </div>
                                           )}
-                                          {/* Show Departure Info */}
-                                          {item.details.departureDate && (
-                                              <div className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 px-2 py-1 rounded border border-blue-100 text-blue-600">
-                                                  <Ship className="w-3 h-3" /> 開船: {item.details.departureDate}
-                                              </div>
-                                          )}
                                       </div>
+                                      
+                                      {/* REAL-TIME TRANSPORT VISUALIZATION */}
+                                      <TransportProgressBar 
+                                          departureDate={item.details.departureDate} 
+                                          durationDays={item.details.shippingDuration} 
+                                          type={item.details.transportType} 
+                                      />
 
                                       {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-2 text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded w-fit"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
                                       {item.payments && item.payments.length > 0 && <div className="mt-2 text-xs font-bold text-green-600">已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}</div>}
                                   </div>
-                                  <div className="flex gap-2">
-                                      {/* Added: Tracking Button */}
-                                      <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
-                                      
-                                      {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
-                                      {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
-                                      <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
-                                      <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="載入"><ArrowLeft className="w-5 h-5"/></button>
-                                      <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
-                                      <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
-                                  </div>
                               </div>
+                              
+                              <div className="flex justify-end gap-2 mb-4">
+                                  <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
+                                  {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
+                                  {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
+                                  <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
+                                  <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="載入"><ArrowLeft className="w-5 h-5"/></button>
+                                  <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
+                                  <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
+                              </div>
+
                               <div className="flex justify-between items-end border-t-2 border-slate-100 pt-4 mt-2">
                                   <div className="text-xs text-slate-500 font-bold space-y-1">
                                       <div>到港: <span className="text-slate-800">{fmt(item.results.landedCost)}</span></div>
