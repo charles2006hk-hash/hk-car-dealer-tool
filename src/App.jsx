@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog, MapPin, Anchor, Package, Plane, Clock, Filter } from 'lucide-react';
+import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSign, Globe, Info, Car, Calendar, List, Trash2, PlusCircle, Search, ChevronDown, X, CheckCircle, AlertTriangle, Lock, Unlock, Loader2, ArrowLeft, User, Key, Printer, FileOutput, Upload, Paperclip, File as FileIcon, Image as ImageIcon, Palette, Download, Eye, CreditCard, FileSignature, Pencil, Cog, MapPin, Anchor, Package, Plane, Clock, Filter, RefreshCw } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -307,7 +307,7 @@ const ImagePreviewModal = ({ file, onClose }) => {
     );
 };
 
-// --- NEW COMPONENT: Visual Transport Progress ---
+// --- VISUAL TRANSPORT PROGRESS ---
 const TransportProgressBar = ({ departureDate, durationDays, type }) => {
     if (!departureDate || !durationDays) return null;
 
@@ -316,7 +316,6 @@ const TransportProgressBar = ({ departureDate, durationDays, type }) => {
     const end = start + (days * 24 * 60 * 60 * 1000);
     const now = Date.now();
     
-    // Calculate percentage (0 to 100)
     let percentage = 0;
     if (now > start) {
         percentage = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
@@ -326,7 +325,6 @@ const TransportProgressBar = ({ departureDate, durationDays, type }) => {
     const isArrived = percentage >= 100;
     const arrivalDate = new Date(end).toLocaleDateString('zh-HK');
     
-    // Calculate days remaining
     const daysLeft = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 
     return (
@@ -338,13 +336,10 @@ const TransportProgressBar = ({ departureDate, durationDays, type }) => {
                 </span>
             </div>
             <div className="relative w-full h-2 bg-slate-200 rounded-full overflow-visible">
-                {/* Progress Fill */}
                 <div 
                     className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${isArrived ? 'bg-green-500' : (type === 'AIR' ? 'bg-sky-500' : 'bg-blue-600')}`}
                     style={{ width: `${percentage}%` }}
                 ></div>
-                
-                {/* Moving Icon */}
                 <div 
                     className="absolute top-1/2 -translate-y-1/2 transition-all duration-1000 z-10"
                     style={{ left: `${percentage}%`, transform: `translate(-50%, -50%)` }}
@@ -362,7 +357,6 @@ const TransportProgressBar = ({ departureDate, durationDays, type }) => {
 const ShippingTrackModal = ({ historyItem, onClose, onSave }) => {
     const [note, setNote] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    
     const tracks = historyItem.shippingTrack || [];
 
     const handleAdd = () => {
@@ -389,7 +383,6 @@ const ShippingTrackModal = ({ historyItem, onClose, onSave }) => {
                     <button onClick={onClose}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
                 </div>
                 <div className="p-6 space-y-4">
-                    {/* Input Area */}
                     <div className="flex flex-col gap-2">
                         <div className="flex gap-2">
                              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-1/3 p-2 border-2 border-slate-300 rounded-lg font-bold text-slate-700 text-sm" />
@@ -397,8 +390,6 @@ const ShippingTrackModal = ({ historyItem, onClose, onSave }) => {
                         </div>
                         <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold shadow hover:bg-blue-700 transition">新增紀錄</button>
                     </div>
-
-                    {/* Timeline */}
                     <div className="max-h-60 overflow-y-auto space-y-0 relative border-l-2 border-slate-200 ml-2">
                         {tracks.length === 0 && <div className="text-slate-400 text-xs italic pl-4">暫無物流紀錄</div>}
                         {tracks.map((t, idx) => (
@@ -524,7 +515,7 @@ const PaymentModal = ({ historyItem, onClose, onSave }) => {
     );
 };
 
-// --- REPORT COMPONENT (IFRAME STRATEGY) ---
+// --- REPORT COMPONENT ---
 const PrintableReport = ({ data, onClose, logo, title = "車輛成本估價單" }) => {
     const { details, vals, fees, results, country, date, attachments, payments } = data;
     const fmt = (n) => new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 0 }).format(n);
@@ -753,7 +744,7 @@ export default function App() {
   const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
   const [history, setHistory] = useState([]);
   
-  // NEW STATES
+  // STATES
   const [sysOptions, setSysOptions] = useState(DEFAULT_OPTIONS); 
   const [reportData, setReportData] = useState(null);
   const [reportTitle, setReportTitle] = useState("車輛成本估價單");
@@ -761,8 +752,9 @@ export default function App() {
   const [trackingModalData, setTrackingModalData] = useState(null);
   const [hoveredFile, setHoveredFile] = useState(null);
   
-  // Filter State
+  // Filter & Edit State
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [editingId, setEditingId] = useState(null); // Added: ID of record being edited
 
   const [carPrice, setCarPrice] = useState('');
   const [prp, setPrp] = useState('');
@@ -770,7 +762,6 @@ export default function App() {
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
-  // Details: Added transportType, departureDate, shippingDuration
   const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', transportType: 'SEA', departureDate: '', shippingDuration: '' });
   
   const [attachments, setAttachments] = useState([]);
@@ -902,7 +893,7 @@ export default function App() {
   const addModel = (mfr) => { if (!newModel.id) return; const years = newModel.years.split(/[,，]/).map(y => y.trim()).filter(Boolean); const codes = newModel.codes.split(/[,，]/).map(c => c.trim()).filter(Boolean); setInventory(prev => { const mfrData = prev[mfr] || { models: [] }; const updatedModels = [...(mfrData.models || []), { id: newModel.id, years, codes }]; return { ...prev, [mfr]: { ...mfrData, models: updatedModels } }; }); setNewModel({ id: '', years: '', codes: '' }); showMsg("型號已新增"); };
   const deleteModel = (mfr, modelId) => { setInventory(prev => { const mfrData = prev[mfr]; if (!mfrData) return prev; const updatedModels = mfrData.models.filter(m => m.id !== modelId); return { ...prev, [mfr]: { ...mfrData, models: updatedModels } }; }); showMsg("型號已刪除"); };
   
-  // --- Options Management (Colors) ---
+  // --- Options Management ---
   const handleAddOption = (type, val) => {
      if(!val.trim()) return;
      setSysOptions(prev => ({...prev, [type]: [...(prev[type]||[]), val.trim()]}));
@@ -937,28 +928,41 @@ export default function App() {
       } 
   };
 
-  const saveHistoryRecord = async () => {
+  // Modified: Save or Update based on editingId
+  const saveOrUpdateRecord = async () => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
       
       const record = { 
-          ts: Date.now(), 
           date: new Date().toLocaleString('zh-HK'), 
-          timestamp: serverTimestamp(), 
           country, 
           details, 
           vals: { carPrice, prp, rate }, 
           fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
           results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
           attachments, 
-          isLocked: false,
-          status: 'QUOTING', 
-          shippingTrack: [] 
+          status: editingId ? (history.find(h=>h.id === editingId)?.status || 'QUOTING') : 'QUOTING', // Preserve status on edit
+          shippingTrack: editingId ? (history.find(h=>h.id === editingId)?.shippingTrack || []) : []
       };
       
       if (JSON.stringify(record).length > 950000) return showMsg("記錄過大", "error");
-      try { await addDoc(getHistoryRef(), record); showMsg("已記錄"); setTimeout(() => setActiveTab('history'), 500); } catch(e) { showMsg("失敗", "error"); }
+
+      try { 
+          if (editingId) {
+              await updateDoc(doc(getHistoryRef(), editingId), record);
+              showMsg("紀錄已更新");
+              setEditingId(null); // Exit edit mode
+          } else {
+              await addDoc(getHistoryRef(), { ...record, ts: Date.now(), timestamp: serverTimestamp(), isLocked: false });
+              showMsg("已記錄");
+          }
+          setTimeout(() => setActiveTab('history'), 500); 
+      } catch(e) { 
+          console.error(e);
+          showMsg("失敗", "error"); 
+      }
   };
+
   const toggleLock = async (item) => { if (!db) return; try { await updateDoc(doc(db, `artifacts/${APP_ID_PATH}/stores/${dataKey}/history`, item.id), { isLocked: !item.isLocked }); } catch(e) {} };
   
   const changeStatus = async (item, newStatus) => {
@@ -967,7 +971,29 @@ export default function App() {
   };
 
   const deleteHistoryItem = (item) => { if (item.isLocked) return showMsg("已鎖定", "error"); setModal({ title: "刪除", message: "確定？", type: "danger", onConfirm: async () => { try { await deleteDoc(doc(getHistoryRef(), item.id)); setModal(null); showMsg("已刪除"); } catch(e) {} } }); };
-  const loadHistoryItem = (item) => { setCountry(item.country); setCarPrice(item.vals.carPrice); setPrp(item.vals.prp); setDetails(item.details); setCurrOriginFees(item.fees.origin); setCurrHkMiscFees(item.fees.hk_misc); setCurrHkLicenseFees(item.fees.hk_license); setAttachments(item.attachments || []); setActiveTab('calculator'); showMsg("已載入"); };
+  
+  // Modified: Load now sets Editing ID
+  const loadHistoryItem = (item) => { 
+      setCountry(item.country); 
+      setCarPrice(item.vals.carPrice); 
+      setPrp(item.vals.prp); 
+      setDetails(item.details); 
+      setCurrOriginFees(item.fees.origin); 
+      setCurrHkMiscFees(item.fees.hk_misc); 
+      setCurrHkLicenseFees(item.fees.hk_license); 
+      setAttachments(item.attachments || []); 
+      
+      setEditingId(item.id); // Enable Edit Mode
+      
+      setActiveTab('calculator'); 
+      showMsg("已載入 (編輯模式)"); 
+  };
+
+  const cancelEdit = () => {
+      setEditingId(null);
+      // Optional: Clear form or keep as is. Keeping as is allows "Save as New" usage.
+      showMsg("已取消編輯模式");
+  };
 
   // Payment Logic
   const handlePaymentSave = async (newPaymentsList) => {
@@ -1008,12 +1034,17 @@ export default function App() {
 
   const handleShowReport = (item) => { setReportData(item); setReportTitle("車輛成本估價單"); };
   const handleShowReceipt = (item) => { setReportData(item); setReportTitle("正式收據 / Official Receipt"); };
-  const closeReport = () => { if (activeTab === 'calculator' && reportData) { loadHistoryItem(reportData); } setReportData(null); };
+  const closeReport = () => { if (activeTab === 'calculator' && reportData && !editingId) { /* Do nothing specific unless we want to reload logic */ } setReportData(null); };
   
-  // Filter Logic
+  // Fixed Filter Logic: ACTIVE means NOT DELIVERED (includes undefined/QUOTING/IN_PROGRESS)
   const filteredHistory = useMemo(() => {
       if (filterStatus === 'ALL') return history;
-      if (filterStatus === 'ACTIVE') return history.filter(h => h.status !== 'DELIVERED');
+      if (filterStatus === 'ACTIVE') {
+          return history.filter(h => {
+              const s = h.status || 'QUOTING'; 
+              return s !== 'DELIVERED';
+          });
+      }
       if (filterStatus === 'DONE') return history.filter(h => h.status === 'DELIVERED');
       return history;
   }, [history, filterStatus]);
@@ -1064,6 +1095,16 @@ export default function App() {
           {/* CALCULATOR TAB */}
           {activeTab === 'calculator' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+                 {/* Header to show Edit Mode */}
+                 {editingId && (
+                     <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 rounded shadow-sm flex justify-between items-center animate-in slide-in-from-top-2">
+                         <div className="flex items-center gap-2 font-bold">
+                             <Pencil className="w-5 h-5"/> 正在編輯紀錄 (ID: ...{editingId.slice(-6)})
+                         </div>
+                         <button onClick={cancelEdit} className="text-sm underline hover:text-orange-900">退出編輯模式</button>
+                     </div>
+                 )}
+
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                       <div className="lg:col-span-7 space-y-6">
                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
@@ -1207,7 +1248,16 @@ export default function App() {
                           </div>
                           <div className="flex gap-2 w-full sm:w-auto">
                               <button onClick={generateCurrentReport} disabled={totalCost<=0} className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 px-3 sm:px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"><Printer className="w-4 h-4"/> 報告</button>
-                              <button onClick={saveHistoryRecord} disabled={totalCost<=0 || !db} className="flex-1 sm:flex-none justify-center bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
+                              
+                              {/* Modified: Save/Update Button Logic */}
+                              {editingId ? (
+                                  <div className="flex gap-2 flex-1 sm:flex-none">
+                                      <button onClick={cancelEdit} className="bg-slate-500 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-1 text-xs shadow-lg transition active:scale-95"><X className="w-4 h-4"/> 取消</button>
+                                      <button onClick={saveOrUpdateRecord} disabled={totalCost<=0 || !db} className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs shadow-lg transition active:scale-95 border-b-4 border-orange-800 active:border-b-0 active:translate-y-1 flex-1"><RefreshCw className="w-4 h-4"/> 更新紀錄</button>
+                                  </div>
+                              ) : (
+                                  <button onClick={saveOrUpdateRecord} disabled={totalCost<=0 || !db} className="flex-1 sm:flex-none justify-center bg-green-600 hover:bg-green-500 px-4 sm:px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center gap-1 text-xs sm:text-sm shadow-lg transition transform active:scale-95 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"><PlusCircle className="w-4 h-4"/> 記錄</button>
+                              )}
                           </div>
                       </div>
                   </div>
@@ -1229,13 +1279,13 @@ export default function App() {
                           onClick={() => setFilterStatus('ACTIVE')} 
                           className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ACTIVE' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                       >
-                          進行中
+                          進行中 (未完成)
                       </button>
                       <button 
                           onClick={() => setFilterStatus('DONE')} 
                           className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DONE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                       >
-                          已完成
+                          已完成 (交貨)
                       </button>
                   </div>
 
@@ -1303,7 +1353,12 @@ export default function App() {
                                   {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
                                   {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
                                   <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
-                                  <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="載入"><ArrowLeft className="w-5 h-5"/></button>
+                                  
+                                  {/* Load now triggers Edit Mode */}
+                                  <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1 font-bold text-xs" title="編輯">
+                                      <Pencil className="w-4 h-4"/> 編輯
+                                  </button>
+                                  
                                   <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
                                   <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
                               </div>
