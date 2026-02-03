@@ -762,7 +762,7 @@ export default function App() {
   const [currHkMiscFees, setCurrHkMiscFees] = useState(DEFAULT_FEES['JP'].hk_misc);
   const [currHkLicenseFees, setCurrHkLicenseFees] = useState(DEFAULT_FEES['JP'].hk_license);
   
-  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', transportType: 'SEA', departureDate: '', shippingDuration: '' });
+  const [details, setDetails] = useState({ manufacturer: '', model: '', year: '', code: '', chassisNo: '', seats: '', transmission: 'AT', engineCapacity: '', exteriorColor: '', interiorColor: '', transportType: 'SEA', departureDate: '', shippingDuration: '', mileage: '' });
   
   const [attachments, setAttachments] = useState([]);
   const [newManufacturer, setNewManufacturer] = useState('');
@@ -1036,18 +1036,37 @@ export default function App() {
   const handleShowReceipt = (item) => { setReportData(item); setReportTitle("正式收據 / Official Receipt"); };
   const closeReport = () => { if (activeTab === 'calculator' && reportData && !editingId) { /* Do nothing specific unless we want to reload logic */ } setReportData(null); };
   
-  // Fixed Filter Logic: ACTIVE means NOT DELIVERED (includes undefined/QUOTING/IN_PROGRESS)
+  // 在 App 組件內新增狀態
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMfr, setSearchMfr] = useState('ALL');
+
   const filteredHistory = useMemo(() => {
-      if (filterStatus === 'ALL') return history;
-      if (filterStatus === 'ACTIVE') {
-          return history.filter(h => {
-              const s = h.status || 'QUOTING'; 
-              return s !== 'DELIVERED';
-          });
-      }
-      if (filterStatus === 'DONE') return history.filter(h => h.status === 'DELIVERED');
-      return history;
-  }, [history, filterStatus]);
+    let list = [...history];
+
+    // 1. 狀態篩選 (原本的邏輯)
+    if (filterStatus === 'ACTIVE') {
+        list = list.filter(h => (h.status || 'QUOTING') !== 'DELIVERED');
+    } else if (filterStatus === 'DONE') {
+        list = list.filter(h => h.status === 'DELIVERED');
+    }
+
+    // 2. 品牌/型號/車身號碼關鍵字搜索
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(h => 
+            h.details.model.toLowerCase().includes(q) || 
+            h.details.chassisNo.toLowerCase().includes(q)
+        );
+    }
+
+    // 3. 鎖定品牌篩選
+    if (searchMfr !== 'ALL') {
+        list = list.filter(h => h.details.manufacturer === searchMfr);
+    }
+
+    // 4. 排序：最新日期放在前面 (確保 ts 存在)
+    return list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    }, [history, filterStatus, searchQuery, searchMfr]);
 
   if (reportData) return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} title={reportTitle} />;
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
@@ -1137,6 +1156,7 @@ export default function App() {
 
                                   <InputGroup label="排氣量 (cc)" value={details.engineCapacity} onChange={v => setDetails(d => ({...d, engineCapacity:v}))} type="number" placeholder="2494" />
                                   <InputGroup label="座位數" value={details.seats} onChange={v => setDetails(d => ({...d, seats:v}))} type="text" placeholder="7" />
+                                  <InputGroup label="車輛咪數 (km)" value={details.mileage} onChange={v => setDetails(d => ({...d, mileage:v}))} type="number" placeholder="e.g. 15000" />
                                   <div className="col-span-2 md:col-span-4"><InputGroup label="車身號碼 (Chassis No)" value={details.chassisNo} onChange={v => setDetails(d => ({...d, chassisNo:v}))} type="text" placeholder="e.g. NHP10-1234567" /></div>
                                   
                                   <div className="col-span-2 md:col-span-4 border-t border-slate-200 pt-4 mt-2">
@@ -1289,9 +1309,38 @@ export default function App() {
                       </button>
                   </div>
 
+                 <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input 
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border-2 border-slate-200 focus:border-blue-500 outline-none font-bold"
+                            placeholder="搜尋型號或車身號碼..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    <select 
+                        className="px-4 py-2 rounded-xl border-2 border-slate-200 font-bold text-slate-700 outline-none focus:border-blue-500"
+                        value={searchMfr}
+                        onChange={(e) => setSearchMfr(e.target.value)}
+                    >
+                        <option value="ALL">所有品牌</option>
+                        {Object.keys(inventory).map(mfr => <option key={mfr} value={mfr}>{mfr}</option>)}
+                    </select>
+                 </div>
+
                   {filteredHistory.length === 0 ? (<div className="text-center py-20 text-slate-400 bg-white rounded-xl border-2 border-dashed border-slate-300">暫無記錄</div>) : (
                       filteredHistory.map(item => (
-                          <Card key={item.id} className="p-6 group hover:shadow-xl transition-all duration-200 border-l-8 border-l-blue-500 hover:translate-x-1">
+                          <Card 
+                                key={item.id} 
+                                className={`p-6 group hover:shadow-xl transition-all duration-200 border-l-8 hover:translate-x-1 ${
+                                    item.isLocked 
+                                    ? 'border-l-yellow-400 bg-yellow-50/30' // 上鎖變黃色
+                                    : (item.status === 'IN_PROGRESS' 
+                                        ? 'border-l-orange-500 bg-orange-50/30' // 進行中變橙色
+                                        : 'border-l-blue-500') // 其他(預設)
+                                }`}
+                            >
                               <div className="flex justify-between items-start mb-4">
                                   <div className="w-full">
                                       <div className="flex items-center gap-2 mb-1">
@@ -1334,6 +1383,13 @@ export default function App() {
                                                   Int: {item.details.interiorColor}
                                               </div>
                                           )}
+
+                                          {/* 2. 新增：咪數標籤 (放在波箱與顏色之間) */}
+                                            {item.details.mileage && (
+                                                <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
+                                                    <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
+                                                </div>
+                                            )}
                                       </div>
                                       
                                       {/* REAL-TIME TRANSPORT VISUALIZATION */}
