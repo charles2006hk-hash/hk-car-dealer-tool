@@ -963,12 +963,16 @@ useEffect(() => {
       } 
   };
 
-  // Modified: Save or Update based on editingId
   const saveOrUpdateRecord = async () => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
       
+      // 自動判定邏輯：如果有填車身號碼，預設進入「進行中」
+      const autoStatus = (details.chassisNo && details.chassisNo.trim() !== '') ? 'IN_PROGRESS' : 'QUOTING';
+
       const record = { 
+          // 每次儲存都更新 ts 為當前時間，確保排序頂置
+          ts: Date.now(), 
           date: new Date().toLocaleString('zh-HK'), 
           country, 
           details, 
@@ -976,24 +980,22 @@ useEffect(() => {
           fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
           results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
           attachments, 
-          status: editingId ? (history.find(h=>h.id === editingId)?.status || 'QUOTING') : 'QUOTING', // Preserve status on edit
+          // 如果是新紀錄，根據有無車架號自動給狀態；如果是編輯，保留原狀態
+          status: editingId ? (history.find(h=>h.id === editingId)?.status || 'QUOTING') : autoStatus,
           shippingTrack: editingId ? (history.find(h=>h.id === editingId)?.shippingTrack || []) : []
       };
       
-      if (JSON.stringify(record).length > 950000) return showMsg("記錄過大", "error");
-
       try { 
           if (editingId) {
               await updateDoc(doc(getHistoryRef(), editingId), record);
               showMsg("紀錄已更新");
-              setEditingId(null); // Exit edit mode
+              setEditingId(null);
           } else {
-              await addDoc(getHistoryRef(), { ...record, ts: Date.now(), timestamp: serverTimestamp(), isLocked: false });
-              showMsg("已記錄");
+              await addDoc(getHistoryRef(), { ...record, timestamp: serverTimestamp(), isLocked: false });
+              showMsg("已記錄並置頂");
           }
           setTimeout(() => setActiveTab('history'), 500); 
       } catch(e) { 
-          console.error(e);
           showMsg("失敗", "error"); 
       }
   };
@@ -1078,30 +1080,26 @@ useEffect(() => {
   const filteredHistory = useMemo(() => {
     let list = [...history];
 
-    // 1. 狀態篩選 (原本的邏輯)
+    // 1. 狀態篩選：確保比對的是 ID (如 'IN_PROGRESS')
     if (filterStatus === 'ACTIVE') {
-        list = list.filter(h => (h.status || 'QUOTING') !== 'DELIVERED');
+        // 顯示 報價中 或 進行中
+        list = list.filter(h => h.status === 'QUOTING' || h.status === 'IN_PROGRESS');
     } else if (filterStatus === 'DONE') {
         list = list.filter(h => h.status === 'DELIVERED');
     }
 
-    // 2. 品牌/型號/車身號碼關鍵字搜索
+    // 2. 搜索過濾
     if (searchQuery) {
         const q = searchQuery.toLowerCase();
         list = list.filter(h => 
-            h.details.model.toLowerCase().includes(q) || 
-            h.details.chassisNo.toLowerCase().includes(q)
+            (h.details.model || '').toLowerCase().includes(q) || 
+            (h.details.chassisNo || '').toLowerCase().includes(q)
         );
     }
 
-    // 3. 鎖定品牌篩選
-    if (searchMfr !== 'ALL') {
-        list = list.filter(h => h.details.manufacturer === searchMfr);
-    }
-
-    // 4. 排序：最新日期放在前面 (確保 ts 存在)
+    // 3. 排序：最後更改的 ts 較大，排在前面
     return list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-    }, [history, filterStatus, searchQuery, searchMfr]);
+  }, [history, filterStatus, searchQuery, searchMfr]);
 
   if (reportData) return <PrintableReport data={reportData} onClose={closeReport} logo={appConfig.logo} title={reportTitle} />;
   if (!isReady) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8"/></div>;
