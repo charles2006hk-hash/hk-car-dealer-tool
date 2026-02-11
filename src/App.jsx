@@ -859,11 +859,34 @@ export default function App() {
       }
   }, [details.engineCapacity]);
 
-  useEffect(() => {
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
-      if (appConfig.logo) { link.href = appConfig.logo; } else { link.href = 'data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVQI12NgATMg38GAA8Zh6wQWiQAyMwEASUkEFTUAAAAASUVORK5CYII='; }
-  }, [appConfig.logo]);
+  // 修改後的 Logo 同步邏輯，確保 iPhone 桌面圖示更新
+useEffect(() => {
+    // 1. 處理普通瀏覽器 Favicon
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+    }
+
+    // 2. 處理 iPhone 桌面圖示 (Apple Touch Icon)
+    let appleIcon = document.querySelector("link[id='dynamic-touch-icon']");
+    if (!appleIcon) {
+        appleIcon = document.createElement('link');
+        appleIcon.id = 'dynamic-touch-icon';
+        appleIcon.rel = 'apple-touch-icon';
+        document.head.appendChild(appleIcon);
+    }
+
+    if (appConfig.logo) {
+        link.href = appConfig.logo;
+        appleIcon.href = appConfig.logo; // 將系統內部上傳的 Base64 寫入 iOS 圖示
+    } else {
+        const defaultLogo = 'data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVQI12NgATMg38GAA8Zh6wQWiQAyMwEASUkEFTUAAAAASUVORK5CYII=';
+        link.href = defaultLogo;
+        appleIcon.href = defaultLogo;
+    }
+}, [appConfig.logo]);
 
   // Handlers
   const handleKeyChange = () => { if (tempKey.trim()) { const newKey = tempKey.trim(); setDataKey(newKey); try { localStorage.setItem('hk_car_dealer_key', newKey); } catch (e) {} setIsKeyEditing(false); showMsg(`已切換至: ${newKey}`); } };
