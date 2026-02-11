@@ -1090,73 +1090,79 @@ export default function App() {
       {paymentModalData && <PaymentModal historyItem={paymentModalData.item} onClose={() => setPaymentModalData(null)} onSave={handlePaymentSave} />}
       {trackingModalData && <ShippingTrackModal historyItem={trackingModalData.item} onClose={() => setTrackingModalData(null)} onSave={handleTrackSave} />}
 
-      <div className="bg-slate-900 text-white p-4 sticky top-0 z-20 shadow-xl print:hidden border-b-4 border-blue-600">
-        <div className="max-w-7xl mx-auto flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            {/* Logo 與 標題 */}
-            <div className="flex items-center gap-3 font-black text-2xl tracking-tight text-white shrink-0">
-                {appConfig.logo ? <img src={appConfig.logo} className="h-10 w-auto rounded object-contain"/> : <Truck className="w-8 h-8 text-blue-400"/>}
-                HK入車系統
+      <div className="bg-slate-900 text-white sticky top-0 z-20 shadow-xl print:hidden border-b-2 border-blue-600">
+    <div className="max-w-7xl mx-auto p-2 sm:p-4 flex flex-col gap-2">
+        {/* 第一行：Logo, 資訊區, 與 Key */}
+        <div className="flex items-center justify-between gap-2">
+            {/* 左側：Logo & 標題 (縮小) */}
+            <div className="flex items-center gap-2 font-black text-lg tracking-tighter shrink-0">
+                {appConfig.logo ? (
+                    <img src={appConfig.logo} className="h-6 w-auto rounded object-contain"/>
+                ) : (
+                    <Truck className="w-5 h-5 text-blue-400"/>
+                )}
+                <span className="hidden xs:inline">HK入車</span>
             </div>
 
-            {/* 實時資訊區 (不佔用過多空間) */}
-            <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                {/* 匯率顯示 */}
-                <div className="flex gap-2 bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-slate-400 font-bold">JPY/HKD:</span>
-                        <span className="text-yellow-400 font-mono font-bold">{rates.JP}</span>
-                    </div>
-                    <div className="w-px h-3 bg-slate-600 self-center"></div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-slate-400 font-bold">GBP/HKD:</span>
-                        <span className="text-blue-400 font-mono font-bold">{rates.UK}</span>
-                    </div>
+            {/* 中間：匯率與年號 (極簡化) */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                <div className="flex items-center gap-1.5 bg-slate-800/50 px-2 py-1 rounded text-[10px] border border-slate-700 whitespace-nowrap">
+                    <span className="text-yellow-400 font-bold">¥{rates.JP}</span>
+                    <span className="text-blue-400 font-bold">£{rates.UK}</span>
                 </div>
-
-                {/* 日本年號轉換器 */}
-                <div className="flex items-center bg-slate-800/50 px-2 py-1 rounded-lg border border-slate-700 gap-1">
-                    <Calendar className="w-3 h-3 text-red-400" />
+                
+                <div className="flex items-center bg-slate-800/50 px-1.5 py-1 rounded text-[10px] border border-slate-700 gap-1 whitespace-nowrap">
                     <select 
                         value={jpEra} 
                         onChange={(e) => setJpEra(e.target.value)}
-                        className="bg-transparent text-white outline-none cursor-pointer font-bold"
+                        className="bg-transparent outline-none font-bold appearance-none"
                     >
-                        <option value="Reiwa" className="bg-slate-800">令和</option>
-                        <option value="Heisei" className="bg-slate-800">平成</option>
+                        <option value="Reiwa">令</option>
+                        <option value="Heisei">平</option>
                     </select>
                     <input 
                         type="number" 
-                        placeholder="年" 
-                        className="w-8 bg-slate-700 rounded px-1 text-center outline-none border border-slate-600"
+                        className="w-5 bg-slate-700 rounded text-center outline-none"
                         value={jpYearNum}
                         onChange={(e) => setJpYearNum(e.target.value)}
                     />
-                    <span className="text-green-400 font-bold min-w-[50px]">{convertJpYear(jpEra, jpYearNum)}</span>
+                    <span className="text-green-400">{convertJpYear(jpEra, jpYearNum).replace(/[()年]/g, '')}</span>
                 </div>
+            </div>
 
-                {/* 原有的 Key 切換 */}
-                <div className="flex items-center gap-2 bg-slate-800 p-2 rounded-xl border border-slate-600 shadow-inner">
-                    <Key className="w-3 h-3 text-yellow-400 ml-1" />
-                    {isKeyEditing ? (
-                        <div className="flex items-center gap-1">
-                            <input autoFocus className="bg-slate-700 text-white px-2 py-1 rounded outline-none w-20 border border-slate-500 font-mono" defaultValue={dataKey} onChange={(e) => setTempKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleKeyChange()} />
-                            <button onClick={handleKeyChange} className="px-1 text-green-400 hover:bg-slate-700 rounded">✓</button>
-                            <button onClick={() => setIsKeyEditing(false)} className="px-1 text-red-400 hover:bg-slate-700 rounded">✕</button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2 px-1 cursor-pointer hover:bg-slate-700 rounded transition group" onClick={() => { setTempKey(dataKey); setIsKeyEditing(true); }}>
-                            <span className="font-mono text-blue-300 font-bold tracking-wide group-hover:text-white transition">{dataKey}</span>
-                        </div>
-                    )}
-                </div>
+            {/* 右側：Key (縮小) */}
+            <div className="shrink-0 scale-90 origin-right">
+                {isKeyEditing ? (
+                    <div className="flex items-center gap-1 bg-slate-800 p-1 rounded">
+                        <input autoFocus className="bg-slate-700 text-white w-16 text-[10px] outline-none" defaultValue={dataKey} onChange={(e) => setTempKey(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleKeyChange()} />
+                    </div>
+                ) : (
+                    <div className="cursor-pointer bg-slate-800 px-2 py-1 rounded border border-slate-700 text-[10px] font-mono text-blue-300" onClick={() => { setTempKey(dataKey); setIsKeyEditing(true); }}>
+                        {dataKey.slice(0,6)}
+                    </div>
+                )}
             </div>
         </div>
         
-        {/* Tab 導航列保持不變 */}
-        <div className="flex bg-slate-800/80 backdrop-blur rounded-xl p-1.5 self-start shadow-inner">
-            {[{id:'calculator', icon: Calculator, label:'計算'}, {id:'history', icon: List, label:`記錄 (${history.length})`}, {id:'settings', icon: Settings, label:'設定'}].map(t => (
-                <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${activeTab===t.id ? 'bg-blue-600 text-white shadow-lg transform scale-105 ring-2 ring-blue-400/50' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}><t.icon className="w-4 h-4" /><span className="hidden sm:inline">{t.label}</span></button>
+        {/* 第二行：Tab 導航 (緊湊版) */}
+        <div className="flex bg-slate-800/80 backdrop-blur rounded-lg p-1 shadow-inner justify-between items-center">
+            {[
+                {id:'calculator', icon: Calculator, label:'計算'}, 
+                {id:'history', icon: List, label:`記錄 (${history.length})`}, 
+                {id:'settings', icon: Settings, label:'設定'}
+            ].map(t => (
+                <button 
+                    key={t.id} 
+                    onClick={() => setActiveTab(t.id)} 
+                    className={`flex flex-1 items-center justify-center gap-2 py-1.5 rounded-md text-xs font-bold transition-all ${
+                        activeTab===t.id 
+                        ? 'bg-blue-600 text-white shadow-md' 
+                        : 'text-slate-400 hover:bg-slate-700'
+                    }`}
+                >
+                    <t.icon className="w-4 h-4" />
+                    <span className="inline sm:inline">{t.id === 'history' ? `${history.length}` : t.label}</span>
+                </button>
             ))}
         </div>
     </div>
