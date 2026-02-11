@@ -1429,9 +1429,6 @@ useEffect(() => {
                                 </button>
                             </div>
                             
-                            {/* 搜尋欄位與清單內容... */}
-                        </div>
-                    )}
 
                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
                     <div className="relative flex-1">
