@@ -967,11 +967,25 @@ useEffect(() => {
       if (!db) return showMsg("未連接", "error");
       if (totalCost <= 0) return showMsg("金額無效", "error");
       
-      // 自動判定邏輯：如果有填車身號碼，預設進入「進行中」
-      const autoStatus = (details.chassisNo && details.chassisNo.trim() !== '') ? 'IN_PROGRESS' : 'QUOTING';
+      // 獲取現有的紀錄資料（如果是編輯模式）
+      const existingItem = editingId ? history.find(h => h.id === editingId) : null;
+      const currentPayments = existingItem?.payments || [];
+      const currentTracks = existingItem?.shippingTrack || [];
+
+      // --- 強化的自動判定邏輯 ---
+      const hasChassis = details.chassisNo && details.chassisNo.trim() !== '';
+      const hasPayments = currentPayments.length > 0;
+      const hasTracks = currentTracks.length > 0;
+      
+      let nextStatus = 'QUOTING';
+      
+      if (existingItem?.status === 'DELIVERED') {
+          nextStatus = 'DELIVERED'; // 如果已經是已交貨，保持不變
+      } else if (hasChassis || hasPayments || hasTracks) {
+          nextStatus = 'IN_PROGRESS'; // 只要有車架號、有付過錢、或有物流，就進入「進行中」
+      }
 
       const record = { 
-          // 每次儲存都更新 ts 為當前時間，確保排序頂置
           ts: Date.now(), 
           date: new Date().toLocaleString('zh-HK'), 
           country, 
@@ -980,9 +994,9 @@ useEffect(() => {
           fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
           results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
           attachments, 
-          // 如果是新紀錄，根據有無車架號自動給狀態；如果是編輯，保留原狀態
-          status: editingId ? (history.find(h=>h.id === editingId)?.status || 'QUOTING') : autoStatus,
-          shippingTrack: editingId ? (history.find(h=>h.id === editingId)?.shippingTrack || []) : []
+          status: nextStatus, // 使用新的判定結果
+          shippingTrack: currentTracks,
+          payments: currentPayments
       };
       
       try { 
@@ -1032,26 +1046,37 @@ useEffect(() => {
       showMsg("已取消編輯模式");
   };
 
-  // Payment Logic
+  // 修改：儲存付款時自動更新狀態
   const handlePaymentSave = async (newPaymentsList) => {
       if (!paymentModalData || !db) return;
       const item = paymentModalData.item;
       try {
-          await updateDoc(doc(getHistoryRef(), item.id), { payments: newPaymentsList });
-          setPaymentModalData(prev => ({ ...prev, item: { ...prev.item, payments: newPaymentsList } }));
-          showMsg("付款紀錄已更新");
-      } catch(e) { console.error(e); showMsg("付款儲存失敗", "error"); }
+          // 只要有付款，狀態就轉為 IN_PROGRESS
+          const newStatus = (item.status === 'DELIVERED') ? 'DELIVERED' : 'IN_PROGRESS';
+          await updateDoc(doc(getHistoryRef(), item.id), { 
+              payments: newPaymentsList,
+              status: newStatus,
+              ts: Date.now() // 更新時間戳以便置頂
+          });
+          setPaymentModalData(prev => ({ ...prev, item: { ...prev.item, payments: newPaymentsList, status: newStatus } }));
+          showMsg("付款紀錄已更新，狀態已轉為進行中");
+      } catch(e) { showMsg("儲存失敗", "error"); }
   };
 
-  // Shipping Track Logic
+  // 修改：儲存物流時自動更新狀態
   const handleTrackSave = async (newTrackList) => {
       if (!trackingModalData || !db) return;
       const item = trackingModalData.item;
       try {
-          await updateDoc(doc(getHistoryRef(), item.id), { shippingTrack: newTrackList });
-          setTrackingModalData(prev => ({ ...prev, item: { ...prev.item, shippingTrack: newTrackList } }));
-          showMsg("物流紀錄已更新");
-      } catch(e) { console.error(e); showMsg("儲存失敗", "error"); }
+          const newStatus = (item.status === 'DELIVERED') ? 'DELIVERED' : 'IN_PROGRESS';
+          await updateDoc(doc(getHistoryRef(), item.id), { 
+              shippingTrack: newTrackList,
+              status: newStatus,
+              ts: Date.now()
+          });
+          setTrackingModalData(prev => ({ ...prev, item: { ...prev.item, shippingTrack: newTrackList, status: newStatus } }));
+          showMsg("物流紀錄已更新，狀態已轉為進行中");
+      } catch(e) { showMsg("儲存失敗", "error"); }
   };
   
   const generateCurrentReport = () => {
@@ -1080,15 +1105,17 @@ useEffect(() => {
   const filteredHistory = useMemo(() => {
     let list = [...history];
 
-    // 1. 狀態篩選：確保比對的是 ID (如 'IN_PROGRESS')
-    if (filterStatus === 'ACTIVE') {
-        // 顯示 報價中 或 進行中
-        list = list.filter(h => h.status === 'QUOTING' || h.status === 'IN_PROGRESS');
-    } else if (filterStatus === 'DONE') {
+    // 1. 精確狀態篩選
+    if (filterStatus === 'QUOTING') {
+        list = list.filter(h => (h.status || 'QUOTING') === 'QUOTING');
+    } else if (filterStatus === 'IN_PROGRESS') {
+        list = list.filter(h => h.status === 'IN_PROGRESS');
+    } else if (filterStatus === 'DELIVERED') {
         list = list.filter(h => h.status === 'DELIVERED');
     }
+    // 如果是 'ALL'，則不執行過濾，顯示全部
 
-    // 2. 搜索過濾
+    // 2. 關鍵字搜索 (型號或車架號)
     if (searchQuery) {
         const q = searchQuery.toLowerCase();
         list = list.filter(h => 
@@ -1097,7 +1124,12 @@ useEffect(() => {
         );
     }
 
-    // 3. 排序：最後更改的 ts 較大，排在前面
+    // 3. 品牌篩選
+    if (searchMfr !== 'ALL') {
+        list = list.filter(h => h.details.manufacturer === searchMfr);
+    }
+
+    // 4. 排序：最後更新時間 (ts) 降序排列，確保新修改的在最上方
     return list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }, [history, filterStatus, searchQuery, searchMfr]);
 
@@ -1367,28 +1399,33 @@ useEffect(() => {
 
           {/* HISTORY TAB */}
           {activeTab === 'history' && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
-                  {/* Filter Buttons */}
-                  <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-                      <button 
-                          onClick={() => setFilterStatus('ALL')} 
-                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                      >
-                          全部
-                      </button>
-                      <button 
-                          onClick={() => setFilterStatus('ACTIVE')} 
-                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ACTIVE' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                      >
-                          進行中 (未完成)
-                      </button>
-                      <button 
-                          onClick={() => setFilterStatus('DONE')} 
-                          className={`px-4 py-2 rounded-full text-sm font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DONE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                      >
-                          已完成 (交貨)
-                      </button>
-                  </div>
+              {/* 修正後的過濾按鈕區 */}
+                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+                        <button 
+                            onClick={() => setFilterStatus('ALL')} 
+                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            全部
+                        </button>
+                        <button 
+                            onClick={() => setFilterStatus('QUOTING')} 
+                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'QUOTING' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            報價中
+                        </button>
+                        <button 
+                            onClick={() => setFilterStatus('IN_PROGRESS')} 
+                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'IN_PROGRESS' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            進行中
+                        </button>
+                        <button 
+                            onClick={() => setFilterStatus('DELIVERED')} 
+                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DELIVERED' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            已交貨
+                        </button>
+                    </div>
 
                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
                     <div className="relative flex-1">
