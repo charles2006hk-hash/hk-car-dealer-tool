@@ -37,7 +37,7 @@ const STATUS_OPTIONS = {
 const COUNTRIES = {
   JP: { id: 'JP', name: '日本 (Japan)', currency: 'JPY', symbol: '¥' },
   UK: { id: 'UK', name: '英國 (UK)', currency: 'GBP', symbol: '£' },
-  OT: { id: 'OT', name: '其他國家 (Others)', currency: 'USD', symbol: '$' },
+  OT: { id: 'OT', name: '其他 (Others)', currency: 'USD', symbol: '$' },
 };
 
 const DEFAULT_FEES = {
