@@ -1398,34 +1398,40 @@ useEffect(() => {
           )}
 
           {/* HISTORY TAB */}
-          {activeTab === 'history' && (
-              {/* 修正後的過濾按鈕區 */}
-                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-                        <button 
-                            onClick={() => setFilterStatus('ALL')} 
-                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                        >
-                            全部
-                        </button>
-                        <button 
-                            onClick={() => setFilterStatus('QUOTING')} 
-                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'QUOTING' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'}`}
-                        >
-                            報價中
-                        </button>
-                        <button 
-                            onClick={() => setFilterStatus('IN_PROGRESS')} 
-                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'IN_PROGRESS' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200'}`}
-                        >
-                            進行中
-                        </button>
-                        <button 
-                            onClick={() => setFilterStatus('DELIVERED')} 
-                            className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DELIVERED' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200'}`}
-                        >
-                            已交貨
-                        </button>
-                    </div>
+          {/* 找到約 1401 行附近，修改如下 */}
+                    {activeTab === 'history' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
+                            {/* 修正後的過濾按鈕區 - 確保註解在 JSX 元素內部 */}
+                            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+                                <button 
+                                    onClick={() => setFilterStatus('ALL')} 
+                                    className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
+                                >
+                                    全部
+                                </button>
+                                <button 
+                                    onClick={() => setFilterStatus('QUOTING')} 
+                                    className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'QUOTING' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                                >
+                                    報價中
+                                </button>
+                                <button 
+                                    onClick={() => setFilterStatus('IN_PROGRESS')} 
+                                    className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'IN_PROGRESS' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-500 border-slate-200'}`}
+                                >
+                                    進行中
+                                </button>
+                                <button 
+                                    onClick={() => setFilterStatus('DELIVERED')} 
+                                    className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition whitespace-nowrap ${filterStatus === 'DELIVERED' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                                >
+                                    已交貨
+                                </button>
+                            </div>
+                            
+                            {/* 搜尋欄位與清單內容... */}
+                        </div>
+                    )}
 
                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
                     <div className="relative flex-1">
