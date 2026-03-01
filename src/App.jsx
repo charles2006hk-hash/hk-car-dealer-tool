@@ -1450,141 +1450,130 @@ useEffect(() => {
                     </select>
                  </div>
 
-                  {filteredHistory.length === 0 ? (<div className="text-center py-20 text-slate-400 bg-white rounded-xl border-2 border-dashed border-slate-300">暫無記錄</div>) : (
-                      filteredHistory.map(item => (
-                          <Card 
-                                key={item.id} 
-                                className={`p-6 group hover:shadow-xl transition-all duration-200 border-l-8 hover:translate-x-1 ${
-                                    item.isLocked 
-                                    ? 'border-l-yellow-400 bg-yellow-50/30' // 上鎖變黃色
-                                    : (item.status === 'IN_PROGRESS' 
-                                        ? 'border-l-orange-500 bg-orange-50/30' // 進行中變橙色
-                                        : 'border-l-blue-500') // 其他(預設)
-                                }`}
-                            >
-                              <div className="flex justify-between items-start mb-4">
-                                  <div className="w-full">
-                                      <div className="flex items-center gap-2 mb-1">
-                                          {/* Status Badge with Select */}
-                                          <div className="relative group/status">
-                                            <span className={`text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider border cursor-pointer ${STATUS_OPTIONS[item.status || 'QUOTING'].color}`}>
-                                                {STATUS_OPTIONS[item.status || 'QUOTING'].label}
-                                            </span>
-                                            {/* Status Dropdown */}
-                                            <div className="absolute top-full left-0 mt-1 hidden group-hover/status:block bg-white border border-slate-200 shadow-xl rounded-lg z-20 min-w-[100px]">
-                                                {Object.values(STATUS_OPTIONS).map(st => (
-                                                    <div key={st.id} onClick={() => changeStatus(item, st.id)} className={`px-3 py-2 text-xs font-bold hover:bg-slate-50 cursor-pointer ${st.id === item.status ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}>
-                                                        {st.label}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                          </div>
-                                          
-                                          <span className="bg-blue-100 text-blue-900 text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider">{item.country}</span>
-                                          <span className="text-xs text-slate-400 font-bold">{item.date}</span>
-                                      </div>
-                                      <div className="font-black text-slate-900 text-xl tracking-tight">{item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span></div>
-                                      <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
+                  {filteredHistory.length === 0 ? (
+    <div className="text-center py-20 text-slate-400 bg-white rounded-xl border-2 border-dashed border-slate-300">暫無記錄</div>
+) : (
+    filteredHistory.map(item => (
+        <Card 
+            key={item.id} 
+            className={`p-6 group hover:shadow-xl transition-all duration-200 border-l-8 hover:translate-x-1 ${
+                item.isLocked 
+                ? 'border-l-yellow-400 bg-yellow-50/30' 
+                : (item.status === 'IN_PROGRESS' 
+                    ? 'border-l-orange-500 bg-orange-50/30' 
+                    : 'border-l-blue-500')
+            }`}
+        >
+            <div className="flex justify-between items-start mb-4">
+                <div className="w-full">
+                    {/* 標題與狀態區 */}
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="relative group/status">
+                            <span className={`text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider border cursor-pointer ${STATUS_OPTIONS[item.status || 'QUOTING'].color}`}>
+                                {STATUS_OPTIONS[item.status || 'QUOTING'].label}
+                            </span>
+                            <div className="absolute top-full left-0 mt-1 hidden group-hover/status:block bg-white border border-slate-200 shadow-xl rounded-lg z-20 min-w-[100px]">
+                                {Object.values(STATUS_OPTIONS).map(st => (
+                                    <div key={st.id} onClick={() => changeStatus(item, st.id)} className={`px-3 py-2 text-xs font-bold hover:bg-slate-50 cursor-pointer ${st.id === item.status ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}>
+                                        {st.label}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <span className="bg-blue-100 text-blue-900 text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider">{item.country}</span>
+                        <span className="text-xs text-slate-400 font-bold">{item.date}</span>
+                    </div>
 
-                                            {/* 第一行：功能標籤與附件縮圖整合 */}
-                                            <div className="flex flex-wrap items-center gap-2 mt-2">
-                                                {/* 波箱 */}
-                                                {item.details.transmission && (
-                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
-                                                        <Cog className="w-3 h-3" /> {item.details.transmission}
-                                                    </div>
-                                                )}
-                                                
-                                                {/* 咪數 (放在波箱後) */}
-                                                {item.details.mileage && (
-                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
-                                                        <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
-                                                    </div>
-                                                )}
+                    <div className="font-black text-slate-900 text-xl tracking-tight">
+                        {item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
+                    
+                    {/* 功能標籤與縮圖整合層 */}
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {item.details.transmission && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                <Cog className="w-3 h-3" /> {item.details.transmission}
+                            </div>
+                        )}
+                        {item.details.mileage && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
+                                <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
+                            </div>
+                        )}
+                        {item.attachments && item.attachments.length > 0 && (
+                            <div className="flex items-center gap-1 ml-1">
+                                <div className="flex -space-x-2 overflow-hidden">
+                                    {item.attachments.slice(0, 3).map((file, idx) => (
+                                        <div key={idx} className="inline-block h-6 w-6 rounded-full ring-2 ring-white border border-slate-200 bg-slate-100 overflow-hidden shadow-sm">
+                                            {file.type.startsWith('image/') ? (
+                                                <img src={file.data} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center bg-slate-200"><FileIcon className="w-2 h-2 text-slate-500" /></div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                {item.attachments.length > 3 && <span className="text-[9px] font-black text-slate-400">+{item.attachments.length - 3}</span>}
+                            </div>
+                        )}
+                    </div>
 
-                                                {/* 附件縮圖 (緊接在標籤後，不另起一行) */}
-                                                {item.attachments && item.attachments.length > 0 && (
-                                                    <div className="flex items-center gap-1 ml-1">
-                                                        <div className="flex -space-x-2 overflow-hidden">
-                                                            {item.attachments.slice(0, 3).map((file, idx) => (
-                                                                <div key={idx} className="inline-block h-6 w-6 rounded-full ring-2 ring-white border border-slate-200 bg-slate-100 overflow-hidden shadow-sm">
-                                                                    {file.type.startsWith('image/') ? (
-                                                                        <img src={file.data} className="h-full w-full object-cover" />
-                                                                    ) : (
-                                                                        <div className="flex h-full w-full items-center justify-center bg-slate-200"><FileIcon className="w-2 h-2 text-slate-500" /></div>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        {item.attachments.length > 3 && (
-                                                            <span className="text-[9px] font-black text-slate-400">+{item.attachments.length - 3}</span>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
+                    {/* 顏色與付款資訊併行層 */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                        <div className="flex gap-2">
+                            {item.details.exteriorColor && (
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                    <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
+                                    {item.details.exteriorColor}
+                                </div>
+                            )}
+                            {item.details.interiorColor && (
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                    <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
+                                    {item.details.interiorColor}
+                                </div>
+                            )}
+                        </div>
+                        {item.payments && item.payments.length > 0 && (
+                            <div className="text-[10px] font-bold text-green-600 flex items-center gap-1 border-l border-slate-200 pl-3">
+                                <CreditCard className="w-3 h-3" />
+                                已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <TransportProgressBar 
+                        departureDate={item.details.departureDate} 
+                        durationDays={item.details.shippingDuration} 
+                        type={item.details.transportType} 
+                    />
+                </div>
+            </div>
+            
+            {/* 操作按鈕區 */}
+            <div className="flex justify-end gap-2 mb-4">
+                <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
+                {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
+                {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
+                <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
+                <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1 font-bold text-xs" title="編輯">
+                    <Pencil className="w-4 h-4"/> 編輯
+                </button>
+                <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
+                <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
+            </div>
 
-                                            {/* 第二行：顏色標籤 (與付款資訊併行以節省空間) */}
-                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                                                <div className="flex gap-2">
-                                                    {item.details.exteriorColor && (
-                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
-                                                            {item.details.exteriorColor}
-                                                        </div>
-                                                    )}
-                                                    {item.details.interiorColor && (
-                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
-                                                            {item.details.interiorColor}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* 付款資訊 (縮小並與顏色併行) */}
-                                                {item.payments && item.payments.length > 0 && (
-                                                    <div className="text-[10px] font-bold text-green-600 flex items-center gap-1 border-l border-slate-200 pl-3">
-                                                        <CreditCard className="w-3 h-3" />
-                                                        已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* 運輸進度條 (緊貼底部) */}
-                                            <div className="mt-2">
-                                                <TransportProgressBar 
-                                                    departureDate={item.details.departureDate} 
-                                                    durationDays={item.details.shippingDuration} 
-                                                    type={item.details.transportType} 
-                                                />
-                                            </div>
-                              
-                              <div className="flex justify-end gap-2 mb-4">
-                                  <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
-                                  {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
-                                  {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
-                                  <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
-                                  
-                                  {/* Load now triggers Edit Mode */}
-                                  <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1 font-bold text-xs" title="編輯">
-                                      <Pencil className="w-4 h-4"/> 編輯
-                                  </button>
-                                  
-                                  <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
-                                  <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
-                              </div>
-
-                              <div className="flex justify-between items-end border-t-2 border-slate-100 pt-4 mt-2">
-                                  <div className="text-xs text-slate-500 font-bold space-y-1">
-                                      <div>到港: <span className="text-slate-800">{fmt(item.results.landedCost)}</span></div>
-                                      <div>A1稅: <span className="text-slate-800">{fmt(item.results.frt)}</span></div>
-                                  </div>
-                                  <div className="text-3xl font-black text-blue-700 tracking-tighter">{fmt(item.results.totalCost)}</div>
-                              </div>
-                          </Card>
-                      ))
-                  )}
-              </div>
-          )}
+            <div className="flex justify-between items-end border-t-2 border-slate-100 pt-4 mt-2">
+                <div className="text-xs text-slate-500 font-bold space-y-1">
+                    <div>到港: <span className="text-slate-800">{fmt(item.results.landedCost)}</span></div>
+                    <div>A1稅: <span className="text-slate-800">{fmt(item.results.frt)}</span></div>
+                </div>
+                <div className="text-3xl font-black text-blue-700 tracking-tighter">{fmt(item.results.totalCost)}</div>
+            </div>
+        </Card>
+    ))
+)}
 
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && (
