@@ -984,40 +984,42 @@ useEffect(() => {
   };
 
   const saveOrUpdateRecord = async () => {
-      if (!db) return showMsg("未連接", "error");
-      if (totalCost <= 0) return showMsg("金額無效", "error");
-      
-      // 獲取現有的紀錄資料（如果是編輯模式）
-      const existingItem = editingId ? history.find(h => h.id === editingId) : null;
-      const currentPayments = existingItem?.payments || [];
-      const currentTracks = existingItem?.shippingTrack || [];
+    if (!db) return showMsg("未連接", "error");
+    if (totalCost <= 0) return showMsg("金額無效", "error");
+    
+    const existingItem = editingId ? history.find(h => h.id === editingId) : null;
+    const currentPayments = existingItem?.payments || [];
+    const currentTracks = existingItem?.shippingTrack || [];
 
-      // --- 強化的自動判定邏輯 ---
-      const hasChassis = details.chassisNo && details.chassisNo.trim() !== '';
-      const hasPayments = currentPayments.length > 0;
-      const hasTracks = currentTracks.length > 0;
-      
-      let nextStatus = 'QUOTING';
-      
-      if (existingItem?.status === 'DELIVERED') {
-          nextStatus = 'DELIVERED'; // 如果已經是已交貨，保持不變
-      } else if (hasChassis || hasPayments || hasTracks) {
-          nextStatus = 'IN_PROGRESS'; // 只要有車架號、有付過錢、或有物流，就進入「進行中」
-      }
+    // --- 修改後的自動判定邏輯 ---
+    // 移除 hasChassis 的判定，僅根據「錢」和「貨」的流動來判定進行中
+    const hasPayments = currentPayments.length > 0;
+    const hasTracks = currentTracks.length > 0;
+    
+    let nextStatus = existingItem?.status || 'QUOTING';
+    
+    if (nextStatus !== 'DELIVERED') {
+        if (hasPayments || hasTracks) {
+            nextStatus = 'IN_PROGRESS'; 
+        } else {
+            // 如果既沒付錢也沒物流，且不是已交貨，則維持/重置為報價中
+            nextStatus = 'QUOTING';
+        }
+    }
 
-      const record = { 
-          ts: Date.now(), 
-          date: new Date().toLocaleString('zh-HK'), 
-          country, 
-          details, 
-          vals: { carPrice, prp, rate }, 
-          fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
-          results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, frt, landedCost, totalCost }, 
-          attachments, 
-          status: nextStatus, // 使用新的判定結果
-          shippingTrack: currentTracks,
-          payments: currentPayments
-      };
+    const record = { 
+        ts: Date.now(), 
+        date: new Date().toLocaleString('zh-HK'), 
+        country, 
+        details: { ...details }, // 確保解構 details 以包含 mileage
+        vals: { carPrice, prp, rate }, 
+        fees: { origin: currOriginFees, hk_misc: currHkMiscFees, hk_license: currHkLicenseFees }, 
+        results: { carPriceHKD, originTotalHKD, hkMiscTotal, hkLicenseTotal: totalLicenseCost, landedCost, totalCost, frt }, 
+        attachments, 
+        status: nextStatus,
+        shippingTrack: currentTracks,
+        payments: currentPayments
+    };
       
       try { 
           if (editingId) {
@@ -1579,20 +1581,50 @@ useEffect(() => {
                                   </div>
                               </div>
                               
-                              <div className="flex justify-end gap-2 mb-4">
-                                  <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
-                                  {item.isLocked && <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款"><CreditCard className="w-5 h-5"/></button>}
-                                  {(item.payments && item.payments.length > 0) && <button onClick={() => handleShowReceipt(item)} className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" title="收據"><FileSignature className="w-5 h-5"/></button>}
-                                  <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印"><Printer className="w-5 h-5"/></button>
-                                  
-                                  {/* Load now triggers Edit Mode */}
-                                  <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1 font-bold text-xs" title="編輯">
-                                      <Pencil className="w-4 h-4"/> 編輯
-                                  </button>
-                                  
-                                  <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}>{item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}</button>
-                                  <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition"><Trash2 className="w-5 h-5"/></button>
-                              </div>
+                            <div className="flex justify-end gap-2 mb-4">
+                                {/* 1. 物流軌跡按鈕 (始終顯示) */}
+                                <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡">
+                                    <Anchor className="w-5 h-5"/>
+                                </button>
+
+                                {/* 2. 付款管理按鈕 (鎖定後顯示，方便管理付款紀錄) */}
+                                {item.isLocked && (
+                                    <button onClick={() => setPaymentModalData({ item })} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition" title="付款管理">
+                                        <CreditCard className="w-5 h-5"/>
+                                    </button>
+                                )}
+
+                                {/* 3. 正式收據按鈕 (修正後的邏輯：只要有付款數據 payments 且長度大於 0 就強制顯示) */}
+                                {item.payments && item.payments.length > 0 && (
+                                    <button 
+                                        onClick={() => handleShowReceipt(item)} 
+                                        className="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition" 
+                                        title="查看收據"
+                                    >
+                                        <FileSignature className="w-5 h-5"/>
+                                    </button>
+                                )}
+
+                                {/* 4. 列印報價單按鈕 (始終顯示) */}
+                                <button onClick={() => handleShowReport(item)} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition" title="列印報價單">
+                                    <Printer className="w-5 h-5"/>
+                                </button>
+                                
+                                {/* 5. 編輯按鈕 (載入計算器進入編輯模式) */}
+                                <button onClick={() => loadHistoryItem(item)} className="p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition flex items-center gap-1 font-bold text-xs" title="編輯">
+                                    <Pencil className="w-4 h-4"/> 編輯
+                                </button>
+                                
+                                {/* 6. 鎖定按鈕 */}
+                                <button onClick={() => toggleLock(item)} className={`p-2 rounded-lg transition ${item.isLocked ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`} title={item.isLocked ? "解鎖" : "鎖定"}>
+                                    {item.isLocked ? <Lock className="w-5 h-5"/> : <Unlock className="w-5 h-5"/>}
+                                </button>
+
+                                {/* 7. 刪除按鈕 (鎖定時禁用) */}
+                                <button onClick={() => deleteHistoryItem(item)} disabled={item.isLocked} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 rounded-lg transition" title="刪除">
+                                    <Trash2 className="w-5 h-5"/>
+                                </button>
+                            </div>
 
                               <div className="flex justify-between items-end border-t-2 border-slate-100 pt-4 mt-2">
                                   <div className="text-xs text-slate-500 font-bold space-y-1">
