@@ -1485,45 +1485,78 @@ useEffect(() => {
                                       </div>
                                       <div className="font-black text-slate-900 text-xl tracking-tight">{item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span></div>
                                       <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
-                                      
-                                      <div className="flex flex-wrap gap-2 mt-2">
-                                          {item.details.transmission && (
-                                              <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
-                                                  <Cog className="w-3 h-3" /> {item.details.transmission}
-                                              </div>
-                                          )}
-                                          {item.details.exteriorColor && (
-                                               <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
-                                                  <div className="w-3 h-3 rounded-full border border-slate-300 shadow-sm" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
-                                                  Ext: {item.details.exteriorColor}
-                                              </div>
-                                          )}
-                                           {item.details.interiorColor && (
-                                               <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
-                                                  <div className="w-3 h-3 rounded-full border border-slate-300 shadow-sm" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
-                                                  Int: {item.details.interiorColor}
-                                              </div>
-                                          )}
 
-                                          {/* 2. 新增：咪數標籤 (放在波箱與顏色之間) */}
-                                            {item.details.mileage && (
-                                                <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
-                                                    <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
+                                            {/* 第一行：功能標籤與附件縮圖整合 */}
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                {/* 波箱 */}
+                                                {item.details.transmission && (
+                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                                        <Cog className="w-3 h-3" /> {item.details.transmission}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* 咪數 (放在波箱後) */}
+                                                {item.details.mileage && (
+                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
+                                                        <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
+                                                    </div>
+                                                )}
+
+                                                {/* 附件縮圖 (緊接在標籤後，不另起一行) */}
+                                                {item.attachments && item.attachments.length > 0 && (
+                                                    <div className="flex items-center gap-1 ml-1">
+                                                        <div className="flex -space-x-2 overflow-hidden">
+                                                            {item.attachments.slice(0, 3).map((file, idx) => (
+                                                                <div key={idx} className="inline-block h-6 w-6 rounded-full ring-2 ring-white border border-slate-200 bg-slate-100 overflow-hidden shadow-sm">
+                                                                    {file.type.startsWith('image/') ? (
+                                                                        <img src={file.data} className="h-full w-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="flex h-full w-full items-center justify-center bg-slate-200"><FileIcon className="w-2 h-2 text-slate-500" /></div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        {item.attachments.length > 3 && (
+                                                            <span className="text-[9px] font-black text-slate-400">+{item.attachments.length - 3}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* 第二行：顏色標籤 (與付款資訊併行以節省空間) */}
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                                <div className="flex gap-2">
+                                                    {item.details.exteriorColor && (
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
+                                                            {item.details.exteriorColor}
+                                                        </div>
+                                                    )}
+                                                    {item.details.interiorColor && (
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
+                                                            {item.details.interiorColor}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                      </div>
-                                      
-                                      {/* REAL-TIME TRANSPORT VISUALIZATION */}
-                                      <TransportProgressBar 
-                                          departureDate={item.details.departureDate} 
-                                          durationDays={item.details.shippingDuration} 
-                                          type={item.details.transportType} 
-                                      />
 
-                                      {item.attachments && item.attachments.length > 0 && <div className="flex items-center gap-1 mt-2 text-xs font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded w-fit"><Paperclip className="w-3 h-3"/> {item.attachments.length} 附件</div>}
-                                      {item.payments && item.payments.length > 0 && <div className="mt-2 text-xs font-bold text-green-600">已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}</div>}
-                                  </div>
-                              </div>
+                                                {/* 付款資訊 (縮小並與顏色併行) */}
+                                                {item.payments && item.payments.length > 0 && (
+                                                    <div className="text-[10px] font-bold text-green-600 flex items-center gap-1 border-l border-slate-200 pl-3">
+                                                        <CreditCard className="w-3 h-3" />
+                                                        已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* 運輸進度條 (緊貼底部) */}
+                                            <div className="mt-2">
+                                                <TransportProgressBar 
+                                                    departureDate={item.details.departureDate} 
+                                                    durationDays={item.details.shippingDuration} 
+                                                    type={item.details.transportType} 
+                                                />
+                                            </div>
                               
                               <div className="flex justify-end gap-2 mb-4">
                                   <button onClick={() => setTrackingModalData({ item })} className="p-2 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition" title="物流軌跡"><Anchor className="w-5 h-5"/></button>
