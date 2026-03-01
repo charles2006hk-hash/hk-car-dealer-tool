@@ -1675,10 +1675,13 @@ useEffect(() => {
                            </div>
                        ))}
                    </Card>
-                   <div className="flex justify-end gap-4"><button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setSysOptions(DEFAULT_OPTIONS); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button><button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button></div>
+                   <div className="flex justify-end gap-4">
+                       <button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setSysOptions(DEFAULT_OPTIONS); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button>
+                       <button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button>
+                   </div>
               </div>
           )}
-      </div>
-    </div>
+      </div> {/* 對應 <div className="max-w-7xl mx-auto p-4 space-y-8 print:hidden"> */}
+    </div> {/* 對應 <div className="min-h-screen bg-slate-100 text-slate-900 pb-20 font-sans"> */}
   );
 }
