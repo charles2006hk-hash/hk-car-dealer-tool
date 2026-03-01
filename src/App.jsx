@@ -302,16 +302,36 @@ const ConfirmationModal = ({ config, onClose }) => {
 const ImagePreviewModal = ({ file, onClose }) => {
     if (!file) return null;
     return (
-        <div className="fixed inset-0 bg-black/95 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full hover:bg-white/10 transition"><X className="w-10 h-10" /></button>
+        <div className="fixed inset-0 bg-black/95 z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+            {/* 修正後的關閉按鈕：增加熱區、調整位置、增加層級 */}
+            <button 
+                onClick={(e) => { e.stopPropagation(); onClose(); }} 
+                className="absolute top-6 right-6 text-white/70 hover:text-white p-4 rounded-full hover:bg-white/10 transition-all z-[80] active:scale-90"
+                title="關閉"
+            >
+                <X className="w-10 h-10" />
+            </button>
+
             <div className="relative w-full h-full flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-                <img src={file.data} alt={file.name} className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl" />
-                <div className="mt-6 flex gap-4">
-                    <a href={file.data} download={file.name} className="flex items-center gap-2 bg-white text-slate-900 px-8 py-3 rounded-full font-bold shadow-2xl hover:bg-slate-100 transition transform hover:scale-105" onClick={(e) => e.stopPropagation()}>
-                        <Download className="w-5 h-5" /> 下載原圖
+                <img 
+                    src={file.data} 
+                    alt={file.name} 
+                    className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" 
+                />
+                
+                {/* 下方操作區 */}
+                <div className="mt-8 flex gap-4">
+                    <a 
+                        href={file.data} 
+                        download={file.name} 
+                        className="flex items-center gap-2 bg-white text-slate-900 px-8 py-3 rounded-full font-bold shadow-2xl hover:bg-slate-100 transition transform hover:scale-105 active:scale-95" 
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <Download className="w-5 h-5" /> 下載圖片
                     </a>
                 </div>
-                <div className="mt-4 text-white/60 text-sm font-mono">{file.name}</div>
+                
+                <div className="mt-4 text-white/40 text-xs font-mono truncate max-w-[80%]">{file.name}</div>
             </div>
         </div>
     );
