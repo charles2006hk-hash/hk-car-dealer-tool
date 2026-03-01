@@ -1480,76 +1480,78 @@ useEffect(() => {
                                             </div>
                                           </div>
                                           
-                                          <span className="bg-blue-100 text-blue-900 text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider">{item.country}</span>
-                                          <span className="text-xs text-slate-400 font-bold">{item.date}</span>
-                                      </div>
-                                      <div className="font-black text-slate-900 text-xl tracking-tight">{item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span></div>
-                                      <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
-                                      
-                                      {/* 第一行：功能標籤與附件縮圖整合 */}
-                                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                                            {/* 波箱 */}
-                                            {item.details.transmission && (
-                                                <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
-                                                    <Cog className="w-3 h-3" /> {item.details.transmission}
-                                                </div>
-                                            )}
-                                            
-                                            {/* 咪數 */}
-                                            {item.details.mileage && (
-                                                <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
-                                                    <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
-                                                </div>
-                                            )}
+                                            <div className="font-black text-slate-900 text-xl tracking-tight">
+                                                {item.details.manufacturer} {item.details.model} <span className="font-bold text-slate-500 text-lg">{item.details.year}</span>
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-1 font-mono font-medium">{item.details.chassisNo}</div>
 
-                                            {/* 附件縮圖 (Avatar Group 樣式，不佔用額外高度) */}
-                                            {item.attachments && item.attachments.length > 0 && (
-                                                <div className="flex items-center gap-1 ml-1">
-                                                    <div className="flex -space-x-2 overflow-hidden">
-                                                        {item.attachments.slice(0, 3).map((file, idx) => (
-                                                            <div key={idx} className="inline-block h-6 w-6 rounded-full ring-2 ring-white border border-slate-200 bg-slate-100 overflow-hidden shadow-sm">
-                                                                {file.type.startsWith('image/') ? (
-                                                                    <img src={file.data} className="h-full w-full object-cover" />
-                                                                ) : (
-                                                                    <div className="flex h-full w-full items-center justify-center bg-slate-200">
-                                                                        <FileIcon className="w-2 h-2 text-slate-500" />
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    {item.attachments.length > 3 && (
-                                                        <span className="text-[9px] font-black text-slate-400">+{item.attachments.length - 3}</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* 第二行：顏色與付款簡要 (併行排列) */}
-                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                                            <div className="flex gap-2">
-                                                {item.details.exteriorColor && (
-                                                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                                        <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
-                                                        {item.details.exteriorColor}
+                                            {/* 第一行：功能標籤 (不含縮圖) */}
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                {item.details.transmission && (
+                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">
+                                                        <Cog className="w-3 h-3" /> {item.details.transmission}
                                                     </div>
                                                 )}
-                                                {item.details.interiorColor && (
-                                                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                                                        <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
-                                                        {item.details.interiorColor}
+                                                {item.details.mileage && (
+                                                    <div className="flex items-center gap-1 text-[10px] font-bold bg-orange-100 px-2 py-1 rounded border border-orange-200 text-orange-700">
+                                                        <RotateCcw className="w-3 h-3" /> {new Intl.NumberFormat().format(item.details.mileage)} km
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* 付款資訊調整為小標籤 */}
-                                            {item.payments && item.payments.length > 0 && (
-                                                <div className="text-[10px] font-bold text-green-600 flex items-center gap-1 border-l border-slate-200 pl-3">
-                                                    <CreditCard className="w-3 h-3" />
-                                                    已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}
+                                            {/* 第二行：顏色與付款信息 */}
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                                                <div className="flex gap-2">
+                                                    {item.details.exteriorColor && (
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.exteriorColor)}}></div>
+                                                            {item.details.exteriorColor}
+                                                        </div>
+                                                    )}
+                                                    {item.details.interiorColor && (
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                                            <div className="w-2.5 h-2.5 rounded-full border border-slate-300" style={{backgroundColor: getColorHex(item.details.interiorColor)}}></div>
+                                                            {item.details.interiorColor}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {item.payments && item.payments.length > 0 && (
+                                                    <div className="text-[10px] font-bold text-green-600 flex items-center gap-1 border-l border-slate-200 pl-3">
+                                                        <CreditCard className="w-3 h-3" />
+                                                        已付: ${new Intl.NumberFormat().format(item.payments.reduce((a,b)=>a+(b.amount||0),0))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* 第三行：優化後的縮圖區 (放在信息下面，加大尺寸，可點擊) */}
+                                            {item.attachments && item.attachments.length > 0 && (
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                                                    {item.attachments.map((file, idx) => (
+                                                        <div 
+                                                            key={idx} 
+                                                            onClick={() => file.type.startsWith('image/') && setPreviewImage(file)} // 點擊放大功能
+                                                            className="h-10 w-10 rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm hover:ring-2 hover:ring-blue-400 transition cursor-zoom-in shrink-0"
+                                                        >
+                                                            {file.type.startsWith('image/') ? (
+                                                                <img src={file.data} alt="" className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center bg-slate-50 text-slate-400">
+                                                                    <FileIcon className="w-4 h-4" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
-                                        </div>
+
+                                            {/* 第四行：物流進度條 (確保有獨立 div 包裹，防止被高度壓縮) */}
+                                            <div className="mt-4 w-full">
+                                                <TransportProgressBar 
+                                                    departureDate={item.details.departureDate} 
+                                                    durationDays={item.details.shippingDuration} 
+                                                    type={item.details.transportType} 
+                                                />
+                                            </div>
                                   </div>
                               </div>
                               
