@@ -4,8 +4,8 @@ import { Settings, Calculator, Save, RotateCcw, Truck, Ship, FileText, DollarSig
 // --- Firebase Imports ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, inMemoryPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+// 修改這行，加入 getDoc 和 getDocs
+import { getFirestore, doc, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs, serverTimestamp, initializeFirestore, memoryLocalCache } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 // --- 1. Firebase 配置 ---
 const MANUAL_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBMSujR0hN0sVniMpeyYHVgdN0bJOKNAmg",
@@ -983,6 +983,59 @@ useEffect(() => {
       } 
   };
 
+  // --- 數據導出邏輯 ---
+const exportAllData = async () => {
+    if (!db || !dataKey) return showMsg("未連接數據庫", "error");
+    
+    try {
+        showMsg("正在準備數據...", "info");
+
+        // 1. 抓取當前設定 (Settings)
+        const settingsSnap = await getDoc(getSettingsRef());
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : {};
+
+        // 2. 抓取所有歷史紀錄 (History)
+        const historySnap = await getDocs(getHistoryRef());
+        const historyData = historySnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            // 轉換 Firebase Timestamp 為可讀字串 (如有使用)
+            timestamp: doc.data().timestamp?.toDate?.() || doc.data().ts 
+        }));
+
+        // 3. 整合 JSON 對象
+        const exportObj = {
+            appName: "HK-Car-Dealer-Tool",
+            exportTime: new Date().toLocaleString('zh-HK'),
+            dataKey: dataKey,
+            payload: {
+                settings: settingsData,
+                history: historyData
+            }
+        };
+
+        // 4. 執行下載
+        const jsonString = JSON.stringify(exportObj, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `HK_Car_Export_${dataKey}_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        
+        // 清理
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showMsg("所有數據已成功導出");
+    } catch (e) {
+        console.error("Export Error:", e);
+        showMsg("導出失敗，請查看控制台", "error");
+    }
+};
+  
   const saveOrUpdateRecord = async () => {
     if (!db) return showMsg("未連接", "error");
     if (totalCost <= 0) return showMsg("金額無效", "error");
@@ -1739,7 +1792,45 @@ useEffect(() => {
                            </div>
                        ))}
                    </Card>
-                   <div className="flex justify-end gap-4"><button onClick={() => {setModal({title: "重置設定", message: "確定重置？", type: "danger", onConfirm: () => {setRates(DEFAULT_RATES); setFees(DEFAULT_FEES); setInventory(DEFAULT_INVENTORY); setAppConfig(DEFAULT_CONFIG); setSysOptions(DEFAULT_OPTIONS); setModal(null); saveConfig();}});}} className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition">重置為預設值</button><button onClick={saveConfig} className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"><Save className="w-5 h-5"/> 儲存設定</button></div>
+                   {/* 修改後的設置底部按鈕區 */}
+<div className="flex flex-col sm:flex-row justify-end gap-4 mt-8 border-t-2 border-slate-200 pt-6">
+    <button 
+        onClick={() => {
+            setModal({
+                title: "重置設定", 
+                message: "確定重置？這將清除當前所有匯率與費用預設值。", 
+                type: "danger", 
+                onConfirm: () => {
+                    setRates(DEFAULT_RATES); 
+                    setFees(DEFAULT_FEES); 
+                    setInventory(DEFAULT_INVENTORY); 
+                    setAppConfig(DEFAULT_CONFIG); 
+                    setSysOptions(DEFAULT_OPTIONS); 
+                    setModal(null); 
+                    saveConfig();
+                }
+            });
+        }} 
+        className="px-6 py-3 text-red-600 hover:bg-red-50 rounded-xl font-bold transition flex items-center justify-center gap-2"
+    >
+        <RotateCcw className="w-4 h-4"/> 重置為預設
+    </button>
+
+    {/* 新增：導出按鈕 */}
+    <button 
+        onClick={exportAllData}
+        className="px-6 py-3 bg-slate-800 text-white rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg hover:bg-slate-700 transition transform hover:-translate-y-0.5"
+    >
+        <FileOutput className="w-5 h-5 text-blue-400"/> 導出所有數據 (JSON)
+    </button>
+
+    <button 
+        onClick={saveConfig} 
+        className="px-8 py-3 bg-blue-600 text-white rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5"
+    >
+        <Save className="w-5 h-5"/> 儲存設定
+    </button>
+</div>
               </div>
           )}
       </div>
