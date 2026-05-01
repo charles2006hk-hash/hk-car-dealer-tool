@@ -983,18 +983,14 @@ useEffect(() => {
       } 
   };
 
-  // --- 數據導出邏輯 ---
-const exportAllData = async () => {
+// --- 僅導出車輛歷史數據 (包含圖片) ---
+const exportHistoryData = async () => {
     if (!db || !dataKey) return showMsg("未連接數據庫", "error");
     
     try {
-        showMsg("正在準備數據...", "info");
+        showMsg("正在準備車輛數據...", "info");
 
-        // 1. 抓取當前設定 (Settings)
-        const settingsSnap = await getDoc(getSettingsRef());
-        const settingsData = settingsSnap.exists() ? settingsSnap.data() : {};
-
-        // 2. 抓取所有歷史紀錄 (History)
+        // 1. 僅抓取歷史紀錄 (History)
         const historySnap = await getDocs(getHistoryRef());
         const historyData = historySnap.docs.map(doc => ({
             id: doc.id,
@@ -1003,33 +999,38 @@ const exportAllData = async () => {
             timestamp: doc.data().timestamp?.toDate?.() || doc.data().ts 
         }));
 
-        // 3. 整合 JSON 對象
+        if (historyData.length === 0) {
+            return showMsg("目前沒有車輛紀錄可供導出", "error");
+        }
+
+        // 2. 整合 JSON 對象 (精簡結構)
         const exportObj = {
             appName: "HK-Car-Dealer-Tool",
+            exportType: "Vehicle-History-Only",
             exportTime: new Date().toLocaleString('zh-HK'),
             dataKey: dataKey,
-            payload: {
-                settings: settingsData,
-                history: historyData
-            }
+            recordCount: historyData.length,
+            // 直接導出歷史數據，裡面已包含 details, results, attachments(圖片) 等
+            history: historyData 
         };
 
-        // 4. 執行下載
+        // 3. 執行下載
         const jsonString = JSON.stringify(exportObj, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         
         const link = document.createElement("a");
         link.href = url;
-        link.download = `HK_Car_Export_${dataKey}_${new Date().toISOString().split('T')[0]}.json`;
+        // 檔名改為 History 以作區分
+        link.download = `HK_Car_History_${dataKey}_${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(link);
         link.click();
         
-        // 清理
+        // 清理內存
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         
-        showMsg("所有數據已成功導出");
+        showMsg(`已成功導出 ${historyData.length} 筆車輛資料`);
     } catch (e) {
         console.error("Export Error:", e);
         showMsg("導出失敗，請查看控制台", "error");
@@ -1792,7 +1793,8 @@ const exportAllData = async () => {
                            </div>
                        ))}
                    </Card>
-                   {/* 修改後的設置底部按鈕區 */}
+                   
+{/* 修改後的設置底部按鈕區 */}
 <div className="flex flex-col sm:flex-row justify-end gap-4 mt-8 border-t-2 border-slate-200 pt-6">
     <button 
         onClick={() => {
@@ -1816,12 +1818,12 @@ const exportAllData = async () => {
         <RotateCcw className="w-4 h-4"/> 重置為預設
     </button>
 
-    {/* 新增：導出按鈕 */}
+    {/* 更新：僅導出車輛紀錄按鈕 */}
     <button 
-        onClick={exportAllData}
+        onClick={exportHistoryData}
         className="px-6 py-3 bg-slate-800 text-white rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg hover:bg-slate-700 transition transform hover:-translate-y-0.5"
     >
-        <FileOutput className="w-5 h-5 text-blue-400"/> 導出所有數據 (JSON)
+        <FileOutput className="w-5 h-5 text-blue-400"/> 導出車輛紀錄 (JSON)
     </button>
 
     <button 
